@@ -1,7 +1,7 @@
 # Pi-hole Maintenance PRO
 
 A full-featured, production-ready maintenance script for **Pi-hole v6.x**  
-Designed for Raspberry Pi environments running **Bookworm**, no Unbound required.
+Compatible with Raspberry Pi (Bookworm), VMs and containers. No Unbound required.
 
 ## ✅ Features
 
@@ -11,13 +11,14 @@ Designed for Raspberry Pi environments running **Bookworm**, no Unbound required
 - Health checks (Ping, DIG, DNS port, FTL stats)
 - Auto-backup (SQLite dump of adlist/domainlist)
 - Full logging per run
+- Optional tools gracefully handled (e.g. sqlite3, vcgencmd)
 
 ## 🖥️ Compatibility
 
 - Pi-hole Core v6.x
-- Raspberry Pi OS (Bookworm)
+- Raspberry Pi OS (Bookworm), Debian 12, Containers
 - No Unbound required
-- Cronjob-ready
+- Works in minimal setups and VMs
 
 ## 📦 Quick Install
 
@@ -29,6 +30,6 @@ chmod +x pihole_maintenance_pro.sh
 
 > 💡 Add it to your crontab for weekly auto-maintenance.
 
-## 📚 Documentation
+## 📄 Log Output
 
-- [🇩🇪 German Guide (Anleitung_DE.md)](docs/Anleitung_DE.md)
+Saved to `/var/log/pihole_maintenance_YYYY-MM-DD.log`
