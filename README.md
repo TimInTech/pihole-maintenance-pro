@@ -1,35 +1,46 @@
 # Pi-hole Maintenance PRO
 
 A full-featured, production-ready maintenance script for **Pi-hole v6.x**  
-Compatible with Raspberry Pi (Bookworm), VMs and containers. No Unbound required.
+Works on Raspberry Pi OS (Bookworm), Debian 12, VMs, containers, and headless systems.
 
 ## ✅ Features
 
-- APT + Pi-hole core update
-- Gravity + Blocklist refresh
+- System updates (`apt`) and Pi-hole updates
+- Gravity / Blocklist refresh
 - DNS reload
-- Health checks (Ping, DIG, DNS port, FTL stats)
-- Auto-backup (SQLite dump of adlist/domainlist)
-- Full logging per run
-- Optional tools gracefully handled (e.g. sqlite3, vcgencmd)
+- Health checks (`ping`, `dig`, port 53, FTL queries)
+- Optional SQLite backup of adlist/domainlist
+- Auto-logging to `/var/log/` per execution
+- Compatible with minimal systems (sqlite3 and vcgencmd checks included)
 
-## 🖥️ Compatibility
+## ⚠️ Requirements
 
-- Pi-hole Core v6.x
-- Raspberry Pi OS (Bookworm), Debian 12, Containers
-- No Unbound required
-- Works in minimal setups and VMs
+- Must be run with `sudo` or as root
+- Pi-hole v6.x installed
+- Optional tools: `sqlite3`, `vcgencmd`
 
 ## 📦 Quick Install
 
 ```bash
-wget -O pihole_maintenance_pro.sh https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/pihole_maintenance_pro.sh
-chmod +x pihole_maintenance_pro.sh
-./pihole_maintenance_pro.sh
+wget -O pihole_maintenance_pro.sh https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/pihole_maintenance_pro.sh && chmod +x pihole_maintenance_pro.sh && sudo ./pihole_maintenance_pro.sh
 ```
 
-> 💡 Add it to your crontab for weekly auto-maintenance.
+## 📄 Output
 
-## 📄 Log Output
+Logs are saved to:
 
-Saved to `/var/log/pihole_maintenance_YYYY-MM-DD.log`
+```
+/var/log/pihole_maintenance_YYYY-MM-DD.log
+```
+
+## 🔄 Cronjob Example
+
+Run every Sunday at 4:00 AM:
+
+```cron
+0 4 * * 0 /home/pi/pihole_maintenance_pro.sh
+```
+
+## License
+
+MIT
