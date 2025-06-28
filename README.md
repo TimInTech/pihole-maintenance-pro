@@ -1,46 +1,69 @@
-# Pi-hole Maintenance PRO
+# Pi-hole Maintenance PRO (v4.4)
 
-A full-featured, production-ready maintenance script for **Pi-hole v6.x**  
-Works on Raspberry Pi OS (Bookworm), Debian 12, VMs, containers, and headless systems.
+This script is designed to simplify regular maintenance tasks for **Pi-hole v6.x** installations. It covers system and Pi-hole updates, blocklist refresh, service checks, optional backups, and logging – tailored for Raspberry Pi OS (Bookworm) and Debian-based systems.
+
+---
 
 ## ✅ Features
 
-- System updates (`apt`) and Pi-hole updates
-- Gravity / Blocklist refresh
-- DNS reload
-- Health checks (`ping`, `dig`, port 53, FTL queries)
-- Optional SQLite backup of adlist/domainlist
-- Auto-logging to `/var/log/` per execution
-- Compatible with minimal systems (sqlite3 and vcgencmd checks included)
+- System package update via `apt`
+- Pi-hole self-update via `pihole -up`
+- Gravity database rebuild (blocklist update)
+- Optional FTL stats overview & health checks
+- Backup of `adlist` and `domainlist` using Pi-hole v6.x schema
+- Uses **embedded** SQLite engine via `pihole-FTL sqlite3`
+- Auto-logging to `/var/log/pihole_maintenance_<date>.log`
+- Safe for Cron automation
 
-## ⚠️ Requirements
+---
 
-- Must be run with `sudo` or as root
-- Pi-hole v6.x installed
-- Optional tools: `sqlite3`, `vcgencmd`
+## 🔧 Usage
 
-## 📦 Quick Install
+Run the script with `sudo` or as root:
 
 ```bash
-wget -O pihole_maintenance_pro.sh https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/pihole_maintenance_pro.sh && chmod +x pihole_maintenance_pro.sh && sudo ./pihole_maintenance_pro.sh
+wget -O pihole_maintenance_pro.sh https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/pihole_maintenance_pro.sh && \
+chmod +x pihole_maintenance_pro.sh && \
+sudo ./pihole_maintenance_pro.sh
 ```
 
-## 📄 Output
+---
 
-Logs are saved to:
+## 📁 Backups
+
+If `pihole-FTL sqlite3` is available, two backup files will be saved to:
 
 ```
-/var/log/pihole_maintenance_YYYY-MM-DD.log
+/etc/pihole/backup_v6/adlist.sql
+/etc/pihole/backup_v6/domainlist.sql
 ```
 
-## 🔄 Cronjob Example
+Backups will be skipped if write permissions are missing.
 
-Run every Sunday at 4:00 AM:
+---
 
-```cron
-0 4 * * 0 /home/pi/pihole_maintenance_pro.sh
-```
+## 🧪 Tested on
 
-## License
+- Raspberry Pi 3 Model B / 3B+
+- Raspberry Pi OS (Bookworm, 64-bit)
+- Pi-hole v6.1.1 (Core), FTL 6.2.1, Web 6.2.1
 
-MIT
+---
+
+## 💡 Notes
+
+- The script **does not require external SQLite binaries**.
+- No Docker, no Unbound – minimal, clean environment.
+- Log file is created automatically under `/var/log/`.
+
+---
+
+## ⚠️ Disclaimer
+
+Use at your own risk. Always review any maintenance scripts before running them on production systems.
+
+---
+
+## 📎 GitHub
+
+[https://github.com/TimInTech/pihole-maintenance-pro](https://github.com/TimInTech/pihole-maintenance-pro)
