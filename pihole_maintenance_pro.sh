@@ -1,6 +1,6 @@
 #!/bin/bash
-# Pi-hole v6.x - Full Maintenance PRO Script (v4.3)
-# Version 4.3 - 2025-06-27
+# Pi-hole v6.x - Full Maintenance PRO Script (v4.4)
+# Version 4.4 - 2025-06-27
 # By Tim & ChatGPT ^=^z^
 
 # Ensure script is run as root
@@ -39,17 +39,18 @@ echo " → System cleanup completed."
 echo "[6] Backup Pi-hole configuration (v6.x)..."
 backup_dir="/etc/pihole/backup_v6"
 mkdir -p "$backup_dir"
-if command -v sqlite3 >/dev/null 2>&1; then
+
+# Use embedded SQLite via pihole-FTL
+if command -v pihole-FTL >/dev/null 2>&1; then
   if [ -w "$backup_dir" ]; then
-    sqlite3 /etc/pihole/gravity.db "SELECT * FROM adlist;" > "$backup_dir/adlist.sql" 2>/dev/null || echo " ⚠️  Failed to write adlist.sql"
-    sqlite3 /etc/pihole/gravity.db "SELECT * FROM domainlist;" > "$backup_dir/domainlist.sql" 2>/dev/null || echo " ⚠️  Failed to write domainlist.sql"
+    pihole-FTL sqlite3 /etc/pihole/gravity.db "SELECT * FROM adlist;" > "$backup_dir/adlist.sql" 2>/dev/null || echo " ⚠️  Failed to write adlist.sql"
+    pihole-FTL sqlite3 /etc/pihole/gravity.db "SELECT * FROM domainlist;" > "$backup_dir/domainlist.sql" 2>/dev/null || echo " ⚠️  Failed to write domainlist.sql"
     echo " → Backup saved to: $backup_dir"
   else
     echo " ⚠️  No write permission to $backup_dir – skipping backup."
   fi
 else
-  echo " ⚠️  sqlite3 is not installed – skipping backup."
-  echo "     → Install with: apt install sqlite3"
+  echo " ⚠️  pihole-FTL is not available – skipping backup."
 fi
 
 echo "[7] Reload Pi-hole DNS..."
@@ -72,18 +73,18 @@ dig google.com @127.0.0.1
 echo "[11] Port 53 status (should be open)"
 ss -tuln | grep :53
 
-if command -v sqlite3 >/dev/null 2>&1; then
+if command -v pihole-FTL >/dev/null 2>&1; then
   if [ -r /etc/pihole/pihole-FTL.db ]; then
     echo "[12] Top 5 domains (from FTL)..."
-    sqlite3 /etc/pihole/pihole-FTL.db "SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;" || echo " ⚠️  Failed to query top domains"
+    pihole-FTL sqlite3 /etc/pihole/pihole-FTL.db "SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;" || echo " ⚠️  Failed to query top domains"
 
     echo "[13] Top 5 clients (from FTL)..."
-    sqlite3 /etc/pihole/pihole-FTL.db "SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;" || echo " ⚠️  Failed to query clients"
+    pihole-FTL sqlite3 /etc/pihole/pihole-FTL.db "SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;" || echo " ⚠️  Failed to query clients"
   else
     echo " ⚠️  FTL database not readable – skipping FTL stats."
   fi
 else
-  echo " ⚠️  sqlite3 not available – skipping FTL stats."
+  echo " ⚠️  pihole-FTL not available – skipping FTL stats."
 fi
 
 echo "[14] FTL process stats..."
