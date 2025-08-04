@@ -1,18 +1,20 @@
-# Pi-hole Maintenance PRO (v4.4)
+# Pi-hole Maintenance PRO MAX (v5.0)
 
-This script is designed to simplify regular maintenance tasks for **Pi-hole v6.x** installations. It covers system and Pi-hole updates, blocklist refresh, service checks, optional backups, and logging – tailored for Raspberry Pi OS (Bookworm) and Debian-based systems.
+This script provides a comprehensive maintenance routine for **Pi-hole v6.x** installations. It offers colorised output, detailed logging, and an interactive step-based workflow.
 
 ---
 
 ## ✅ Features
 
-- System package update via `apt`
-- Pi-hole self-update via `pihole -up`
-- Gravity database rebuild (blocklist update)
-- Optional FTL stats overview & health checks
-- Backup of `adlist` and `domainlist` using Pi-hole v6.x schema
-- Uses **embedded** SQLite engine via `pihole-FTL sqlite3`
-- Auto-logging to `/var/log/pihole_maintenance_<date>.log`
+- Step-by-step workflow with status summary
+- Colored output with symbols and progress indicators
+- System package update and cleanup via `apt`
+- Pi-hole self-update and Gravity blocklist refresh
+- Backup of `adlist` and `domainlist` using `pihole-FTL sqlite3`
+- DNS reload and basic network diagnostics (ping, dig, port check)
+- Statistics for top domains and clients
+- Raspberry Pi health info (uptime, temperature, resource usage)
+- Auto-logging to `/var/log/pihole_maintenance_pro_<timestamp>.log`
 - Safe for Cron automation
 
 ---
@@ -47,14 +49,6 @@ Backups will be skipped if write permissions are missing.
 - Raspberry Pi 3 Model B / 3B+
 - Raspberry Pi OS (Bookworm, 64-bit)
 - Pi-hole v6.1.1 (Core), FTL 6.2.1, Web 6.2.1
-
----
-
-## 💡 Notes
-
-- The script **does not require external SQLite binaries**.
-- No Docker, no Unbound – minimal, clean environment.
-- Log file is created automatically under `/var/log/`.
 
 ---
 
