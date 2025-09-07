@@ -42,6 +42,7 @@ Run the script with `sudo` or as root:
 wget -O pihole_maintenance_pro.sh https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/pihole_maintenance_pro.sh && \
 chmod +x pihole_maintenance_pro.sh && \
 sudo ./pihole_maintenance_pro.sh
+```
 
 
 ---
