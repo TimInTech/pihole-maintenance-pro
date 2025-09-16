@@ -10,7 +10,7 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 - Colored output with symbols and progress indicators
 - System package update and cleanup via `apt`
 - Pi-hole self-update and Gravity blocklist refresh
-- Multi-stage Pi-hole backup with compressed `/etc/pihole` snapshot, Gravity `adlist` dump, and FTL schema export
+
 - DNS reload and basic network diagnostics (ping, dig, port check)
 - Statistics for top domains and clients
 - Raspberry Pi health info (uptime, temperature, resource usage)
@@ -27,15 +27,7 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 - **FTL schema dump** now included alongside the Gravity backup for easier inspection
 
 ### v5.0
-- **Step-by-step flow** with colored status output
-- **Full logging** to `/var/log/pihole_maintenance_pro_<timestamp>.log`
-- **Native backups** via Pi-hole's bundled SQLite interface for Gravity tables (v5.0 exported both `adlist` and `domainlist`)
-- **Extra stats**: Top domains & top clients
-- **Extra Raspberry Pi health info**: uptime, temperature, resource usage
-- **Cron-ready**: OS/Pi-hole updates, gravity refresh, DNS reload, ping/dig/port checks
-- **Backup location**: `/etc/pihole/backup_v6/` (legacy path, replaced by timestamped directories in v5.1.2)
-- **Upgrade**: Just replace the script with the latest from the repo – no setup needed
-- **Compatibility**: v5 is a drop-in replacement for v4 with improved UX/logging and integrated SQLite backup
+
 
 ---
 
@@ -54,15 +46,7 @@ sudo ./pihole_maintenance_pro.sh
 
 📁 Backups
 
-If the `sqlite3` CLI is available (Pi-hole ships one via `pihole-FTL sqlite3`), backup artifacts will be saved to:
 
-`/var/backups/pihole_backup_<timestamp>/`
-
-This directory contains:
-
-- `pihole_backup.tar.gz` – compressed snapshot of `/etc/pihole`
-- `adlist.sql` – Gravity adlist dump captured with `sqlite3` (5-second lock timeout)
-- `ftl_schema.sql` – FTL schema export captured with `sqlite3` (5-second lock timeout)
 
 Backups will be skipped if write permissions are missing or if the backup directory cannot be created.
 

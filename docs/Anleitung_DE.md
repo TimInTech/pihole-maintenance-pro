@@ -10,7 +10,7 @@ Dieses Skript dient der vollständigen Pflege und Wartung eines Pi-hole v6.x Sys
 - Healthchecks (Ping, dig, Port 53, FTL)
 - Statistiken zu Top-Domains und -Clients
 - Ressourcen- und Temperaturanzeige des Raspberry Pi
-- Mehrstufiges Backup (Tarball + Gravity-`adlist`-Dump + FTL-Schema-Export)
+
 - Logging aller Schritte in `/var/log/`
 
 ## 📁 Backup
@@ -22,8 +22,7 @@ Backups werden jetzt schrittweise erstellt und landen in einem eigenen Verzeichn
 Enthalten sind:
 
 - `pihole_backup.tar.gz` – komprimierter Snapshot von `/etc/pihole`
-- `adlist.sql` – Export der Gravity-Werbelisten über die `sqlite3`-CLI (5 s Lock-Timeout, Pi-hole liefert `pihole-FTL sqlite3` mit)
-- `ftl_schema.sql` – Dump des FTL-Schemas via `sqlite3` (ebenfalls 5 s Lock-Timeout) für Referenz und Troubleshooting
+
 
 ## 🔧 Ausführung
 
