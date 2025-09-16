@@ -1,7 +1,14 @@
-#!/bin/bash
-# Pi-hole v6.x - Full Maintenance PRO MAX (v5.0)
-# Version 5.0 - 2025-08-04
+#!/usr/bin/env bash
+# Pi-hole v6.x - Full Maintenance PRO MAX (v5.1)
+# Version 5.1 - 2025-09-16
 # By Tim & ChatGPT ^=^z^
+#
+# Verbesserte Version: Zeigt laufende Hintergrundprozesse dynamisch an,
+# detailliertere grafische Ausgabe, pro-Step-Logs und Abschlussübersicht
+#
+# Qualitätsmaßnahmen: set -u -o pipefail, keine harten Secrets, temporäre Logs
+set -u -o pipefail
+IFS=$'\n\t'
 
 # Farben und Symbole
 RED='\033[0;31m'
@@ -10,112 +17,188 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 CHECK="${GREEN}✔${NC}"
 WARN="${YELLOW}⚠${NC}"
 FAIL="${RED}✖${NC}"
 ARROW="${BLUE}➜${NC}"
 
-# Logging-Funktionen
+# Temporärer Ordner für Step-Logs
+TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
+trap 'rm -rf "$TMPDIR"; echo -e "${YELLOW}Temporary logs removed: $TMPDIR${NC}"' EXIT
+
+# Globale Logdatei (wird später initialisiert, sobald Timestamp verfügbar)
+LOGFILE=""
+
+# Statusvariablen
+declare -A STATUS        # Schritt -> status string
+declare -A STEP_PID      # Schritt -> PID (falls Hintergrund)
+declare -A STEP_LOGFILE  # Schritt -> per-step logfile
+
+# Logging-Funktionen (sowohl stdout als auch Gesamtlog)
 log() {
     echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
-    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOGFILE"
+    [ -n "${LOGFILE:-}" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOGFILE"
 }
-
 info() {
     echo -e "${BLUE}[INFO]${NC} $1"
-    echo -e "[INFO] $1" >> "$LOGFILE"
+    [ -n "${LOGFILE:-}" ] && echo "[INFO] $1" >> "$LOGFILE"
 }
-
 warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
-    echo -e "[WARNING] $1" >> "$LOGFILE"
+    [ -n "${LOGFILE:-}" ] && echo "[WARNING] $1" >> "$LOGFILE"
 }
-
 error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
-    echo -e "[ERROR] $1" >> "$LOGFILE"
+    [ -n "${LOGFILE:-}" ] && echo "[ERROR] $1" >> "$LOGFILE"
 }
 
 # Als root ausführen
 if [[ $EUID -ne 0 ]]; then
-  error "This script must be run with sudo or as root."
+  error "Dieses Skript muss mit sudo oder als root ausgeführt werden."
   exit 1
 fi
 
+# Initialisiere das Hauptlogfile mit Timestamp
 LOGFILE="/var/log/pihole_maintenance_pro_$(date +%Y-%m-%d_%H-%M-%S).log"
+# Leite stdout/stderr in das logfile (und gleichzeitig auf Konsole)
 exec > >(tee -a "$LOGFILE") 2>&1
 
-# Statusvariablen
-declare -A STATUS
-
-# Header-Funktion
+# Header-Funktion (verbesserte grafische Darstellung)
 print_header() {
-    echo -e "\n${MAGENTA}╔══════════════════════════════════════════════╗"
-    echo -e "║   🛰️  PI-HOLE MAINTENANCE PRO MAX 🛰️        ║"
-    echo -e "╚══════════════════════════════════════════════╝${NC}"
+    clear
+    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════╗"
+    echo -e "║   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.1${MAGENTA})  ║"
+    echo -e "╠════════════════════════════════════════════════════════════╣${NC}"
+    # Zeige Pi-hole Version falls vorhanden
+    if command -v pihole >/dev/null 2>&1; then
+        PH_VER="$(pihole -v 2>/dev/null || true)"
+        echo -e "${MAGENTA}║${NC} Version: ${CYAN}${PH_VER:-unbekannt}${NC}"
+    else
+        echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
+    fi
+    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════╝${NC}"
 }
 
-# Fortschrittsbalken
-progress_bar() {
-    local duration=${1}
-    printf "${BLUE}${ARROW} Processing ["
-    for ((i=0; i<duration; i++)); do
-        printf "▰"
-        sleep 0.3
+# Spinner für laufende Tasks
+spinner() {
+    local pid=$1
+    local prefix="${2:-}"
+    local spin_chars='|/-\'
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        i=$(( (i+1) %4 ))
+        printf "\r${prefix} %s ${spin_chars:i:1}" "${CYAN}running${NC}"
+        sleep 0.15
     done
-    printf "] 100%%${NC}\n"
+    printf "\r"
 }
 
-# Funktion für konsistente Schrittausgabe
+# Eine Step-Funktion, die den Befehl asynchron ausführt und live anzeigt.
+# Parameter:
+#  $1 - step_num (z.B. "01")
+#  $2 - symbol (z.B. "🔄")
+#  $3 - description (String)
+#  $4 - command (String) - wird in 'bash -lc' ausgeführt
+#  $5 - critical (true/false) - ob bei Fehler abort
+#  $6 - display_only (true/false) - nur anzeigen, nicht "hintergrund"
 run_step() {
-    local step_num=$1
-    local symbol=$2
-    local description=$3
-    local cmd=$4
-    local critical=${5:-false}
-    local display=${6:-false}
-    
-    echo -e "\n${BLUE}╔═[Step $step_num]${NC}"
+    local step_num="$1"
+    local symbol="$2"
+    local description="$3"
+    local cmd="$4"
+    local critical="${5:-false}"
+    local display_only="${6:-false}"
+
+    local step_log="$TMPDIR/step_${step_num}.log"
+    STEP_LOGFILE["$step_num"]="$step_log"
+
+    echo -e "\n${BLUE}╔═[Step ${step_num}]${NC}"
     echo -e "${BLUE}║ ${symbol} ${description}${NC}"
     echo -en "${BLUE}╚═>${NC} "
-    
-    if $display; then
-        # Nur Anzeige, keine Ausführung
-        eval "$cmd" || true
-        STATUS["$step_num"]="${GREEN}✔ OK${NC}"
-        return 0
-    fi
-    
-    # Führe Befehl aus und fange Exit-Status ab
-    if output=$(eval "$cmd" 2>&1); then
-        echo -e "${CHECK} Success"
-        STATUS["$step_num"]="${GREEN}✔ OK${NC}"
-    else
-        exit_code=$?
-        if [ $exit_code -eq 1 ]; then
+
+    # Wenn nur Anzeige (z.B. status commands), führe synchron aus und show output
+    if [[ "${display_only}" == "true" ]]; then
+        bash -lc "$cmd" 2>&1 | tee "$step_log"
+        local exit_code=${PIPESTATUS[0]:-0}
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${CHECK} Success"
+            STATUS["$step_num"]="${GREEN}✔ OK${NC}"
+        else
             echo -e "${WARN} Warning"
             STATUS["$step_num"]="${YELLOW}⚠ WARN${NC}"
-        else
-            echo -e "${FAIL} Error"
-            STATUS["$step_num"]="${RED}✖ FAIL${NC}"
-            if $critical; then
+            [ -s "$step_log" ] && echo -e "${YELLOW}--- Output ---${NC}" && tail -n 20 "$step_log"
+            if [[ "${critical}" == "true" ]]; then
                 error "Critical error - script aborted!"
                 exit 1
             fi
         fi
-        # Zeige Ausgabe nur bei Fehlern/Warnungen
-        [ -n "$output" ] && echo "$output"
+        return 0
+    fi
+
+    # Starte den Befehl im Hintergrund und schreibe stdout/stderr in logfile
+    # Wir verwenden bash -lc um komplexe Kommandos/Mehrzeiler zu unterstützen.
+    bash -lc "$cmd" > "$step_log" 2>&1 &
+    local pid=$!
+    STEP_PID["$step_num"]=$pid
+
+    # Zeige Spinner während der Prozess läuft; alle 1s update: letzte Zeile der Logdatei
+    (
+        # Hintergrundüberwachung (nicht blockierend für outer)
+        while kill -0 "$pid" 2>/dev/null; do
+            # Zeige letzte Zeile der laufenden Ausgabe (falls vorhanden)
+            if [ -f "$step_log" ]; then
+                last_line="$(tail -n 1 "$step_log" 2>/dev/null || true)"
+                printf "\r${CYAN}%s${NC} %s" "${last_line:0:60}" "${BLUE}[PID:${pid}]${NC}"
+            else
+                printf "\r${BLUE}[PID:${pid}] ${CYAN}running...${NC}"
+            fi
+            sleep 0.6
+        done
+    ) &
+
+    # Warte auf Beendigung und erfasse Exit-Code
+    if wait "$pid"; then
+        echo -e "\n${CHECK} Success"
+        STATUS["$step_num"]="${GREEN}✔ OK${NC}"
+    else
+        exit_code=$?
+        if [[ $exit_code -eq 1 ]]; then
+            echo -e "\n${WARN} Warning"
+            STATUS["$step_num"]="${YELLOW}⚠ WARN${NC}"
+        else
+            echo -e "\n${FAIL} Error (code: $exit_code)"
+            STATUS["$step_num"]="${RED}✖ FAIL${NC}"
+            echo -e "${RED}--- Last 50 lines of step ${step_num} log ---${NC}"
+            [ -f "$step_log" ] && tail -n 50 "$step_log"
+            if [[ "${critical}" == "true" ]]; then
+                error "Critical error in step ${step_num} - script aborted!"
+                exit 1
+            fi
+        fi
     fi
 }
 
+# Utility: prüfe Verfügbarkeit von sqlite3 und setze passende Befehle
+SQLITE_BIN="$(command -v sqlite3 || true)"
+if [[ -z "$SQLITE_BIN" ]]; then
+    warning "sqlite3 nicht gefunden. Einige DB-Abfragen werden fehlschlagen."
+fi
+
+# Utility: Abfrage/Fallback für pihole-FTL DB Pfad (verschiedene Installationen)
+FTL_DB="/etc/pihole/pihole-FTL.db"
+GRAVITY_DB="/etc/pihole/gravity.db"
+if [[ ! -f "$FTL_DB" && -f "/etc/pihole/pihole-FTL.db" ]]; then
+    FTL_DB="/etc/pihole/pihole-FTL.db"
+fi
+
 # ========== Hauptprogramm ==========
 
-# System-Header anzeigen
-clear
 print_header
 log "Started at: $(date)"
 info "Logfile: $LOGFILE"
+info "Tempdir for step logs: $TMPDIR"
 
 # ========== Systemaktualisierung ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ SYSTEM UPDATE ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
@@ -129,91 +212,154 @@ run_step "02" "🧹" "System cleanup" \
 # ========== Pi-hole Wartung ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE MAINTENANCE ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
 
-run_step "03" "🆙" "Pi-hole self-update" \
+# Pi-hole Version und empfohlene Kommando-Optionen prüfen
+run_step "03" "🔎" "Detect Pi-hole version" \
+    "pihole -v || echo 'pihole CLI not installed or failed to report version'" false true
+
+run_step "04" "🆙" "Pi-hole self-update" \
     "pihole -up"
 
-run_step "04" "📋" "Update Gravity / Blocklists" \
+run_step "05" "📋" "Update Gravity / Blocklists" \
     "pihole -g"
 
-run_step "05" "💾" "Backup Pi-hole configuration" \
-    "backup_dir=\"/etc/pihole/backup_v6\"; \
+# Backup: verbessertes Backup mit sqlite3 fallback & komplettes Verzeichnis als tar.gz
+run_step "06" "💾" "Backup Pi-hole configuration (gravity + pihole dir)" \
+    "backup_dir=\"/etc/pihole/backup_v6_$(date +%Y-%m-%d_%H-%M-%S)\"; \
      mkdir -p \"\$backup_dir\"; \
      if [ -w \"\$backup_dir\" ]; then \
-         pihole-FTL sqlite3 /etc/pihole/gravity.db \".dump adlist\" > \"\$backup_dir/adlist.sql\" 2>/dev/null; \
-         pihole-FTL sqlite3 /etc/pihole/gravity.db \".dump domainlist\" > \"\$backup_dir/domainlist.sql\" 2>/dev/null; \
+         echo 'Backing up /etc/pihole to' \"\$backup_dir\"; \
+         cp -a /etc/pihole/* \"\$backup_dir\" 2>/dev/null || true; \
+         if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$GRAVITY_DB\" ]; then \
+             sqlite3 \"$GRAVITY_DB\" \".dump adlist\" > \"\$backup_dir/adlist.sql\" 2>/dev/null || true; \
+         fi; \
+         if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$FTL_DB\" ]; then \
+             sqlite3 \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\" 2>/dev/null || true; \
+         fi; \
+         tar -czf \"/var/backups/pihole_backup_$(date +%Y-%m-%d_%H-%M-%S).tar.gz\" -C \"\$backup_dir\" . && echo \"Tar saved to /var/backups\" || echo 'Tar failed'; \
          echo \"Backup saved to: \$backup_dir\"; \
      else \
          echo 'No write permission to backup directory'; \
      fi"
 
-run_step "06" "🔄" "Reload Pi-hole DNS" \
+run_step "07" "🔄" "Reload Pi-hole DNS" \
     "pihole reloaddns"
 
 # ========== Systemdiagnose ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ SYSTEM DIAGNOSTICS ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
 
-run_step "07" "📡" "Pi-hole status" \
-    "pihole status" false true
+run_step "08" "📡" "Pi-hole status (service checks)" \
+    "pihole status; systemctl is-active pihole-FTL.service || systemctl status pihole-FTL.service" false true
 
-run_step "08" "📊" "Network connectivity tests" \
+run_step "09" "📊" "Network connectivity tests" \
     "echo 'Ping 8.8.8.8 (Google):'; ping -c 2 -W 2 8.8.8.8; \
      echo 'Ping 1.1.1.1 (Cloudflare):'; ping -c 2 -W 2 1.1.1.1; \
-     echo 'DNS resolution (google.com):'; dig google.com @127.0.0.1 +short" false true
-run_step "09" "🔒" "Port 53 status (DNS)" \
-    "ss -tuln | grep ':53'" false true
+     echo 'DNS resolution (google.com via localhost):'; dig google.com @127.0.0.1 +short" false true
+
+run_step "10" "🔒" "Port 53 status (DNS) + sockets" \
+    "ss -tuln | grep ':53' || netstat -tuln | grep ':53' || echo 'No DNS port 53 listeners detected'" false true
 
 # ========== Pi-hole Statistiken ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE STATISTICS ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
 
-run_step "10" "🌐" "Top 5 domains (from FTL)" \
-    "pihole-FTL sqlite3 /etc/pihole/pihole-FTL.db \
-     'SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;' \
-     || echo 'FTL database query failed'" false true
+# Falls sqlite3 verfügbar ist, führe fokussierte Abfragen asynchron aus
+if command -v sqlite3 >/dev/null 2>&1 && [ -f "$FTL_DB" ]; then
+    run_step "11" "🌐" "Top 5 domains (from FTL DB)" \
+        "sqlite3 \"$FTL_DB\" \"SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;\" || echo 'FTL DB query failed'" false true
 
-run_step "11" "👤" "Top 5 clients (from FTL)" \
-    "pihole-FTL sqlite3 /etc/pihole/pihole-FTL.db \
-     'SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;' \
-     || echo 'FTL database query failed'" false true
+    run_step "12" "👤" "Top 5 clients (from FTL DB)" \
+        "sqlite3 \"$FTL_DB\" \"SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;\" || echo 'FTL DB query failed'" false true
+else
+    run_step "11" "🌐" "Top 5 domains (FTL DB not available)" \
+        "echo 'FTL DB not available or sqlite3 missing'" false true
+    run_step "12" "👤" "Top 5 clients (FTL DB not available)" \
+        "echo 'FTL DB not available or sqlite3 missing'" false true
+fi
 
-run_step "12" "⚙️" "FTL process stats" \
-    "ps -C pihole-FTL -o pid,%cpu,%mem,cmd" false true
+run_step "13" "⚙️" "FTL process stats" \
+    "ps -C pihole-FTL -o pid,%cpu,%mem,cmd || ps aux | egrep 'pihole-FTL|pihole-FTL' || echo 'FTL process not found'" false true
 
 # ========== Raspberry Pi Gesundheit ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ RASPBERRY PI HEALTH ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
 
-run_step "13" "⏱️" "System uptime" \
+run_step "14" "⏱️" "System uptime" \
     "uptime -p" false true
 
-run_step "14" "🌡️" "CPU temperature" \
-    "if command -v vcgencmd >/dev/null; then \
-         temp=\$(vcgencmd measure_temp | cut -d= -f2); \
-         echo \"Current temperature: \$temp\"; \
+run_step "15" "🌡️" "CPU temperature" \
+    "if command -v vcgencmd >/dev/null 2>&1; then \
+         vcgencmd measure_temp || true; \
      else \
-         echo 'vcgencmd not available'; \
+         echo 'vcgencmd nicht verfügbar'; \
      fi" false true
 
-run_step "15" "📈" "Resource usage" \
-    "echo 'CPU usage:'; top -bn1 | grep 'Cpu(s)'; \
+run_step "16" "📈" "Resource usage (CPU/Memory/Disk)" \
+    "echo 'Top CPU processes:'; ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 10; \
      echo 'Memory usage:'; free -h; \
      echo 'Disk usage:'; df -h /" false true
 
-# ========== Abschlussbericht ==========
+# ========== Abschlussbericht: laufende Prozesse & Fehlerübersicht ==========
 echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
 echo -e "║          📊 MAINTENANCE REPORT           ║"
 echo -e "╠════════╦═════════════════════════════╣"
 echo -e "║ ${CYAN}STEP${NC}   ║ ${GREEN}STATUS${NC}                  ║"
 echo -e "╠════════╬═════════════════════════════╣"
 
-# Sortiere Schritte numerisch
+# Sortiere Schritte numerisch und gebe Status aus
 sorted_steps=($(printf '%s\n' "${!STATUS[@]}" | sort -n))
-
-# Ausgabe der sortierten Schritte
 for step in "${sorted_steps[@]}"; do
     printf "║ ${BLUE}%-6s${NC} ║ %-20s ║\n" "$step" "${STATUS[$step]}"
 done
 
 echo -e "╚════════╩═════════════════════════════╝"
 
+# Zusätzliche Übersicht: aktuell laufende relevante Prozesse
+echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
+echo -e "║        🔎 Running Pi-hole Processes      ║"
+echo -e "╠════════════════════════════════════════╣${NC}"
+ps aux | egrep -i 'pihole|pihole-FTL|dnsmasq|unbound|dnscrypt|dnsproxy' | sed -n '1,20p' || echo "No matching processes found"
+echo -e "${MAGENTA}╚════════════════════════════════════════╝${NC}"
+
+# Fehlerprüfungs-Übersicht: Zeige Schritte, die WARN/FAIL haben und gib Log-Auszüge
+echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
+echo -e "║        ⚠ Issues / Error Summary         ║"
+echo -e "╠════════════════════════════════════════╣${NC}"
+has_issues=false
+for step in "${sorted_steps[@]}"; do
+    status="${STATUS[$step]}"
+    if echo "$status" | grep -E "WARN|FAIL|FAIL" >/dev/null 2>&1; then
+        has_issues=true
+        echo -e "${YELLOW}Step ${step}: ${status}${NC}"
+        logfile="${STEP_LOGFILE[$step]:-}"
+        if [[ -n "$logfile" && -f "$logfile" ]]; then
+            echo -e "${CYAN}--- Last 40 lines of step ${step} log ---${NC}"
+            tail -n 40 "$logfile"
+        fi
+        echo
+    fi
+done
+
+if [[ "$has_issues" == "false" ]]; then
+    echo -e "${GREEN}No warnings or errors detected in steps.${NC}"
+fi
+
 log "Maintenance completed at: $(date)"
 info "Full log saved: $LOGFILE"
 echo -e "${GREEN}\n✅ PI-HOLE MAINTENANCE PRO MAX SUCCESSFULLY COMPLETED ✅${NC}"
+
+# ================= Helpful suggestions / future features =================
+cat <<'SUGGESTIONS'
+
+Suggested improvements & Pi-hole related updates to consider:
+- Add optional "dry-run" mode for disruptive operations (updates/reloads).
+- Add an argument parser (getopts) to allow selective step execution (e.g. --skip-backup).
+- Integrate systemd notify / journald for service-status checks.
+- Add built-in rotation of /var/backups/pihole_backup_*.tar.gz (prune older than X days).
+- For Pi-hole v6+ consider:
+  - Using 'pihole -a' admin commands for certs / web admin checks.
+  - Monitoring FTL schema changes: if queries table column names differ, adapt SQL.
+- Add optional Slack/Matrix/Email notification on critical failures.
+- Consider a non-root mode where only allowed operations are performed (via sudo for specific commands).
+- Add integrity checks for gravity.db and pihole-FTL.db (vacuum / integrity_check via sqlite3).
+SUGGESTIONS
+
+# Script Ende
+exit 0
