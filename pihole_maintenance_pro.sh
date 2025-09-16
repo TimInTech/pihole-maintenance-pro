@@ -245,19 +245,106 @@ run_step "05" "📋" "Update Gravity / Blocklists" \
     "pihole -g"
 
 # Backup: improved backup sequence (no hanging, clear progress messages)
-run_step "06" "💾" "Backup Pi-hole configuration (gravity + pihole dir)" \
-    "backup_dir=\"/var/backups/pihole_backup_$(date +%Y-%m-%d_%H-%M-%S)\"; \
+BACKUP_TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
+PIHOLE_BACKUP_DIR="/var/backups/pihole_backup_${BACKUP_TIMESTAMP}"
+
+run_step "06a" "💾" "Backup Pi-hole configuration (tarball)" \
+    "backup_dir=\"${PIHOLE_BACKUP_DIR}\"; \
      mkdir -p \"\$backup_dir\"; \
      echo 'Backup directory:' \"\$backup_dir\"; \
+     ftl_service='pihole-FTL.service'; \
+     ftl_controlled=0; \
+     if command -v systemctl >/dev/null 2>&1; then \
+         if systemctl list-unit-files --type=service 2>/dev/null | awk '{print \$1}' | grep -Fxq \"\${ftl_service}\"; then \
+             echo 'Stopping pihole-FTL.service...'; \
+             if systemctl stop \"\$ftl_service\"; then \
+                 ftl_controlled=1; \
+                 echo 'pihole-FTL.service stopped.'; \
+             else \
+                 echo 'Failed to stop pihole-FTL.service before backup' >&2; \
+                 exit 5; \
+             fi; \
+         else \
+             echo 'Service pihole-FTL.service not found; skipping stop/start.'; \
+         fi; \
+     else \
+         echo 'systemctl not available; skipping stop/start.'; \
+     fi; \
      echo '1) Creating tarball of /etc/pihole (excluding WAL/SHM/sockets)...'; \
-     tar -C /etc -czf \"\$backup_dir/pihole_backup.tar.gz\" --warning=no-file-changed --exclude='pihole-FTL.db-wal' --exclude='pihole-FTL.db-shm' --exclude='*.sock' pihole || { echo 'Tar archive failed' >&2; exit 2; }; \
-     echo 'Tarball created: ' \"\$backup_dir/pihole_backup.tar.gz\"; \
-     echo '2) Exporting gravity adlist (if sqlite3 & gravity.db available)...'; \
-     if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$GRAVITY_DB\" ]; then sqlite3 \"$GRAVITY_DB\" \".dump adlist\" > \"\$backup_dir/adlist.sql\" 2>/dev/null || echo 'Gravity adlist dump failed'; else echo 'sqlite3 or gravity.db missing'; fi; \
-     echo '3) Exporting FTL schema (if sqlite3 & pihole-FTL.db available)...'; \
-     if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$FTL_DB\" ]; then sqlite3 \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\" 2>/dev/null || echo 'FTL schema dump failed'; else echo 'sqlite3 or ftl db missing'; fi; \
-     echo 'Backup completed successfully. Files in:' \"\$backup_dir\"; \
-     ls -lh \"\$backup_dir\" || true" true
+     tar_exit=0; \
+     if tar -C /etc -czf \"\$backup_dir/pihole_backup.tar.gz\" --warning=no-file-changed --exclude='pihole-FTL.db-wal' --exclude='pihole-FTL.db-shm' --exclude='*.sock' pihole; then \
+         echo 'Tarball created:' \"\$backup_dir/pihole_backup.tar.gz\"; \
+     else \
+         tar_exit=\$?; \
+         echo \"Tar archive failed (code \$tar_exit)\" >&2; \
+     fi; \
+     if [[ \$ftl_controlled -eq 1 ]]; then \
+         echo 'Starting pihole-FTL.service...'; \
+         if systemctl start \"\$ftl_service\"; then \
+             echo 'pihole-FTL.service started.'; \
+         else \
+             echo 'Failed to start pihole-FTL.service after backup' >&2; \
+             exit 6; \
+         fi; \
+     fi; \
+     if [[ \$tar_exit -ne 0 ]]; then \
+         exit \$tar_exit; \
+     fi; \
+     ls -lh \"\$backup_dir\"" true
+
+run_step "06b" "🧲" "Gravity database adlist dump" \
+    "backup_dir=\"${PIHOLE_BACKUP_DIR}\"; \
+     if [[ -z \"\$backup_dir\" ]]; then \
+         echo 'Backup directory not defined.' >&2; \
+         exit 20; \
+     fi; \
+     if [[ ! -d \"\$backup_dir\" ]]; then \
+         echo 'Backup directory missing:' \"\$backup_dir\" >&2; \
+         exit 21; \
+     fi; \
+     if ! command -v sqlite3 >/dev/null 2>&1; then \
+         echo 'sqlite3 not available for gravity dump.' >&2; \
+         exit 22; \
+     fi; \
+     if [[ ! -f \"$GRAVITY_DB\" ]]; then \
+         echo 'gravity.db not found at $GRAVITY_DB.' >&2; \
+         exit 23; \
+     fi; \
+     echo '2) Exporting gravity adlist with 5s lock timeout...'; \
+     if sqlite3 -cmd \".timeout 5000\" \"$GRAVITY_DB\" \".dump adlist\" > \"\$backup_dir/adlist.sql\"; then \
+         echo 'Gravity adlist dump saved to:' \"\$backup_dir/adlist.sql\"; \
+     else \
+         rc=\$?; \
+         echo \"Gravity adlist dump failed (code \$rc)\" >&2; \
+         exit \$rc; \
+     fi" true
+
+run_step "06c" "🧬" "FTL schema dump" \
+    "backup_dir=\"${PIHOLE_BACKUP_DIR}\"; \
+     if [[ -z \"\$backup_dir\" ]]; then \
+         echo 'Backup directory not defined.' >&2; \
+         exit 30; \
+     fi; \
+     if [[ ! -d \"\$backup_dir\" ]]; then \
+         echo 'Backup directory missing:' \"\$backup_dir\" >&2; \
+         exit 31; \
+     fi; \
+     if ! command -v sqlite3 >/dev/null 2>&1; then \
+         echo 'sqlite3 not available for FTL schema dump.' >&2; \
+         exit 32; \
+     fi; \
+     if [[ ! -f \"$FTL_DB\" ]]; then \
+         echo 'FTL database not found at $FTL_DB.' >&2; \
+         exit 33; \
+     fi; \
+     echo '3) Exporting FTL schema with 5s lock timeout...'; \
+     if sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\"; then \
+         echo 'FTL schema dump saved to:' \"\$backup_dir/ftl_schema.sql\"; \
+     else \
+         rc=\$?; \
+         echo \"FTL schema dump failed (code \$rc)\" >&2; \
+         exit \$rc; \
+     fi" true
 
 run_step "07" "🔄" "Reload Pi-hole DNS" \
     "pihole reloaddns"
@@ -282,10 +369,10 @@ echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE STATISTICS ▀▀
 # Falls sqlite3 verfügbar ist, führe fokussierte Abfragen asynchron aus
 if command -v sqlite3 >/dev/null 2>&1 && [ -f "$FTL_DB" ]; then
     run_step "11" "🌐" "Top 5 domains (from FTL DB)" \
-        "sqlite3 \"$FTL_DB\" \"SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;\" || echo 'FTL DB query failed'" false true
+        "sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \"SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;\" || { echo 'FTL DB query failed' >&2; exit 1; }" false true
 
     run_step "12" "👤" "Top 5 clients (from FTL DB)" \
-        "sqlite3 \"$FTL_DB\" \"SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;\" || echo 'FTL DB query failed'" false true
+        "sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \"SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;\" || { echo 'FTL DB query failed' >&2; exit 1; }" false true
 else
     run_step "11" "🌐" "Top 5 domains (FTL DB not available)" \
         "echo 'FTL DB not available or sqlite3 missing'" false true
