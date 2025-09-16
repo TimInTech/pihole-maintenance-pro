@@ -1,4 +1,4 @@
-# Pi-hole Maintenance PRO MAX (v5.0)
+# Pi-hole Maintenance PRO MAX (v5.1.2)
 
 This script provides a comprehensive maintenance routine for **Pi-hole v6.x** installations. It offers colorised output, detailed logging, and an interactive step-based workflow.
 
@@ -10,7 +10,7 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 - Colored output with symbols and progress indicators
 - System package update and cleanup via `apt`
 - Pi-hole self-update and Gravity blocklist refresh
-- Backup of `adlist` and `domainlist` using `pihole-FTL sqlite3`
+- Multi-stage Pi-hole backup with compressed `/etc/pihole` snapshot, Gravity `adlist` dump, and FTL schema export
 - DNS reload and basic network diagnostics (ping, dig, port check)
 - Statistics for top domains and clients
 - Raspberry Pi health info (uptime, temperature, resource usage)
@@ -20,6 +20,11 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 ---
 
 ## 📜 Changelog
+
+### v5.1.2
+- **New backup destination**: `/var/backups/pihole_backup_<timestamp>/` stores each run in its own directory
+- **Split backup flow**: separate steps for tarball, Gravity `adlist` dump, and FTL schema export with clearer progress output
+- **FTL schema dump** now included alongside the Gravity backup for easier inspection
 
 ### v5.0
 - **Step-by-step flow** with colored status output  
@@ -49,12 +54,17 @@ sudo ./pihole_maintenance_pro.sh
 
 📁 Backups
 
-If pihole-FTL sqlite3 is available, two backup files will be saved to:
+If pihole-FTL sqlite3 is available, backup artifacts will be saved to:
 
-/etc/pihole/backup_v6/adlist.sql
-/etc/pihole/backup_v6/domainlist.sql
+`/var/backups/pihole_backup_<timestamp>/`
 
-Backups will be skipped if write permissions are missing.
+This directory contains:
+
+- `pihole_backup.tar.gz` – compressed snapshot of `/etc/pihole`
+- `adlist.sql` – Gravity adlist dump via `pihole-FTL sqlite3`
+- `ftl_schema.sql` – FTL schema export via `pihole-FTL sqlite3`
+
+Backups will be skipped if write permissions are missing or if the backup directory cannot be created.
 
 
 ---
