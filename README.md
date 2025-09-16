@@ -27,15 +27,7 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 - **FTL schema dump** now included alongside the Gravity backup for easier inspection
 
 ### v5.0
-- **Step-by-step flow** with colored status output  
-- **Full logging** to `/var/log/pihole_maintenance_pro_<timestamp>.log`  
-- **Native backups** for `adlist` & FTL schema using `sqlite3`
-- **Extra stats**: Top domains & top clients  
-- **Extra Raspberry Pi health info**: uptime, temperature, resource usage  
-- **Cron-ready**: OS/Pi-hole updates, gravity refresh, DNS reload, ping/dig/port checks  
-- **Backup location**: `/etc/pihole/backup_v6/` (if possible)  
-- **Upgrade**: Just replace the script with the latest from the repo – no setup needed  
-- **Compatibility**: v5 is a drop-in replacement for v4 with improved UX/logging and integrated SQLite backup
+
 
 ---
 

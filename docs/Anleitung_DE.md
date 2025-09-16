@@ -22,8 +22,7 @@ Backups werden jetzt schrittweise erstellt und landen in einem eigenen Verzeichn
 Enthalten sind:
 
 - `pihole_backup.tar.gz` – komprimierter Snapshot von `/etc/pihole`
-- `adlist.sql` – Export der Gravity-Werbelisten über `pihole-FTL sqlite3`
-- `ftl_schema.sql` – Dump des FTL-Schemas für Referenz und Troubleshooting
+
 
 ## 🔧 Ausführung
 
