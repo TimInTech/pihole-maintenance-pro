@@ -209,11 +209,20 @@ if [[ -z "$SQLITE_BIN" ]]; then
 fi
 
 # Utility: Abfrage/Fallback für pihole-FTL DB Pfad (verschiedene Installationen)
-FTL_DB="/etc/pihole/pihole-FTL.db"
-GRAVITY_DB="/etc/pihole/gravity.db"
-if [[ ! -f "$FTL_DB" && -f "/etc/pihole/pihole-FTL.db" ]]; then
-    FTL_DB="/etc/pihole/pihole-FTL.db"
+FTL_DB=""
+for candidate in \
+    "/etc/pihole/pihole-FTL.db" \
+    "/run/pihole-FTL.db" \
+    "/var/lib/pihole/pihole-FTL.db"; do
+    if [[ -f "$candidate" ]]; then
+        FTL_DB="$candidate"
+        break
+    fi
+done
+if [[ -z "$FTL_DB" ]]; then
+    warning "Pi-hole FTL database not found in known locations."
 fi
+GRAVITY_DB="/etc/pihole/gravity.db"
 
 # ========== Hauptprogramm ==========
 
@@ -333,9 +342,13 @@ run_step "06c" "🧬" "FTL schema dump" \
          echo 'sqlite3 not available for FTL schema dump.' >&2; \
          exit 32; \
      fi; \
+     if [[ -z \"$FTL_DB\" ]]; then \
+         echo 'FTL database path not available.' >&2; \
+         exit 33; \
+     fi; \
      if [[ ! -f \"$FTL_DB\" ]]; then \
          echo 'FTL database not found at $FTL_DB.' >&2; \
-         exit 33; \
+         exit 34; \
      fi; \
      echo '3) Exporting FTL schema with 5s lock timeout...'; \
      if sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\"; then \
@@ -367,7 +380,7 @@ run_step "10" "🔒" "Port 53 status (DNS) + sockets" \
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE STATISTICS ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
 
 # Falls sqlite3 verfügbar ist, führe fokussierte Abfragen asynchron aus
-if command -v sqlite3 >/dev/null 2>&1 && [ -f "$FTL_DB" ]; then
+if command -v sqlite3 >/dev/null 2>&1 && [[ -n "$FTL_DB" && -f "$FTL_DB" ]]; then
     run_step "11" "🌐" "Top 5 domains (from FTL DB)" \
         "sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \"SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;\" || { echo 'FTL DB query failed' >&2; exit 1; }" false true
 
