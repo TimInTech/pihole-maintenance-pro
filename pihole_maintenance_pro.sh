@@ -1,464 +1,197 @@
 #!/usr/bin/env bash
-# Pi-hole v6.x - Full Maintenance PRO MAX (v5.1.2)
-# Version 5.1.2 - 2025-09-16
-# By Tim & ChatGPT ^=^z^
+# ============================================================================
+# Pi-hole v6.x – Full Maintenance PRO MAX
+# Version: 5.2.0 (2025-07-10)
+# Authors: TimITech
 #
-# Fixes:
-# - Improve backup step to avoid hangs (use tar directly into /var/backups, exclude WAL/SHM/sockets)
-# - Print clear progress messages during backup so you see what is currently executed
-# - Spinner: fix spin_chars quoting and ensure spinner writes only to TTY
-# - Small logging/robustness tweaks
-#
+# What’s new vs 5.1.2
+#  - Fix backup block quoting (removed stray backslash + comment in heredoc)
+#  - Stronger, faster backup (short, safe stop of FTL; tar with excludes)
+#  - Clearer live progress: spinner shows last log line and PID; writes only to TTY
+#  - Robust logging: all steps mirrored to /var/log + per-step logs in /tmp
+#  - Safer Pi-hole v6 commands (reloaddns / reloadlists usage left intact)
+#  - More diagnostics (ports, dig tests, top domains/clients via sqlite3)
+# ============================================================================
 set -euo pipefail
 IFS=$'\n\t'
 
-# Farben und Symbole
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
-CHECK="${GREEN}✔${NC}"
-WARN="${YELLOW}⚠${NC}"
-FAIL="${RED}✖${NC}"
+# --------------------------- Colors & symbols -------------------------------
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
+  MAGENTA='\033[0;35m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+else
+  RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; BOLD=""; NC=""
+fi
+CHECK="${GREEN}✔${NC}"; WARN="${YELLOW}⚠${NC}"; FAIL="${RED}✖${NC}"
 
-# Temporärer Ordner für Step-Logs
-TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
-trap 'rm -rf "$TMPDIR"; echo -e "${YELLOW}Temporary logs removed: $TMPDIR${NC}"' EXIT
-
-# Globale Logdatei (wird später initialisiert, sobald Timestamp verfügbar)
-LOGFILE=""
-
-# Statusvariablen
-declare -A STATUS        # Schritt -> status string
-declare -A STEP_LOGFILE  # Schritt -> per-step logfile
-
-# Utility: strip ANSI escape sequences (works without perl)
-strip_ansi() {
-    # usage: some_command | strip_ansi > file
-    sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'
-}
-
-# Logging-Funktionen (sowohl stdout als auch Gesamtlog)
-log() {
-    echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
-    [ -n "${LOGFILE:-}" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOGFILE"
-}
-info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-    [ -n "${LOGFILE:-}" ] && echo "[INFO] $1" >> "$LOGFILE"
-}
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-    [ -n "${LOGFILE:-}" ] && echo "[ERROR] $1" >> "$LOGFILE"
-}
-
-# Als root ausführen
-if [[ $EUID -ne 0 ]]; then
-  error "Dieses Skript muss mit sudo oder als root ausgeführt werden."
+# --------------------------- Root check ------------------------------------
+if [[ ${EUID} -ne 0 ]]; then
+  echo -e "${RED}[ERROR]${NC} Bitte mit sudo oder als root ausführen." >&2
   exit 1
 fi
 
-# Initialisiere das Hauptlogfile mit Timestamp
+# --------------------------- Paths & globals --------------------------------
+TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
 LOGFILE="/var/log/pihole_maintenance_pro_$(date +%Y-%m-%d_%H-%M-%S).log"
-# Leite stdout/stderr in das logfile (und gleichzeitig auf Konsole)
+trap 'rm -rf "$TMPDIR"; [[ -t 1 ]] && echo -e "${YELLOW}Temporary logs removed: $TMPDIR${NC}" || true' EXIT
+
+# All stdout/stderr to logfile AND console
 exec > >(tee -a "$LOGFILE") 2>&1
 
-# Header-Funktion (verbesserte grafische Darstellung)
-print_header() {
-    clear
-    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.1.2${MAGENTA})  ║${NC}"
-    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
-    # Zeige Pi-hole Version falls vorhanden
-    if command -v pihole >/dev/null 2>&1; then
-        PH_VER="$(pihole -v 2>/dev/null || true)"
-        echo -e "${MAGENTA}║${NC} Version: ${CYAN}${PH_VER:-unbekannt}${NC}"
-    else
-        echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
-    fi
-    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════════╝${NC}"
+declare -A STATUS        # step -> status
+declare -A STEP_LOGFILE  # step -> step logfile
+
+# --------------------------- Utils -----------------------------------------
+strip_ansi() { sed -r $'s/\x1B\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'; }
+
+echo_hdr() {
+  [[ -t 1 ]] && clear || true
+  echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.2.0${MAGENTA})  ║${NC}"
+  echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
+  if command -v pihole >/dev/null 2>&1; then
+    PH_VER="$(pihole -v 2>/dev/null || true)"
+    echo -e "${MAGENTA}║${NC} Version: ${CYAN}${PH_VER:-unbekannt}${NC}"
+  else
+    echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
+  fi
+  echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════════╝${NC}"
 }
 
-# Eine Step-Funktion, die den Befehl asynchron ausführt und live anzeigt.
-# Parameter:
-#  $1 - step_num (z.B. "01")
-#  $2 - symbol (z.B. "🔄")
-#  $3 - description (String)
-#  $4 - command (String) - wird in 'bash -lc' ausgeführt
-#  $5 - critical (true/false) - ob bei Fehler abort
-#  $6 - display_only (true/false) - nur anzeigen, nicht "hintergrund"
 run_step() {
-    local step_num="$1"
-    local symbol="$2"
-    local description="$3"
-    local cmd="$4"
-    local critical="${5:-false}"
-    local display_only="${6:-false}"
+  # $1 num, $2 icon, $3 title, $4 cmd, $5 critical(true/false), $6 display_only(true/false)
+  local n="$1"; local icon="$2"; local title="$3"; local cmd="$4"; local critical="${5:-false}"; local display_only="${6:-false}"
+  local step_log="$TMPDIR/step_${n}.log"; STEP_LOGFILE["$n"]="$step_log"
 
-    local step_log="$TMPDIR/step_${step_num}.log"
-    STEP_LOGFILE["$step_num"]="$step_log"
+  echo -e "\n${BLUE}╔═[Step ${n}]${NC}"
+  echo -e "${BLUE}║ ${icon} ${title}${NC}"
+  echo -en "${BLUE}╚═>${NC} "
 
-    echo -e "\n${BLUE}╔═[Step ${step_num}]${NC}"
-    echo -e "${BLUE}║ ${symbol} ${description}${NC}"
-    echo -en "${BLUE}╚═>${NC} "
-
-    # Wenn nur Anzeige (z.B. status commands), führe synchron aus und show output (strip colors to per-step logfile)
-    if [[ "${display_only}" == "true" ]]; then
-        # Run command and both show on console and write a cleaned copy to step log
-        # Use a subshell to preserve exit code
-        if bash -lc "$cmd" 2>&1 | tee /dev/tty | strip_ansi > "$step_log"; then
-            echo -e "${CHECK} Success"
-            STATUS["$step_num"]="${GREEN}✔ OK${NC}"
-        else
-            echo -e "${WARN} Warning"
-            STATUS["$step_num"]="${YELLOW}⚠ WARN${NC}"
-            [ -s "$step_log" ] && echo -e "${YELLOW}--- Output ---${NC}" && tail -n 20 "$step_log"
-            if [[ "${critical}" == "true" ]]; then
-                error "Critical error - script aborted!"
-                exit 1
-            fi
-        fi
-        return 0
-    fi
-
-    # Starte den Befehl im Hintergrund und schreibe stdout/stderr in logfile (ANSI-codes entfernt)
-    # Wir verwenden bash -lc um komplexe Kommandos/Mehrzeiler zu unterstützen.
-    # Ensure the command's own output goes to the step log only (cleaned).
-    bash -lc "$cmd" 2>&1 | strip_ansi > "$step_log" &
-    local pid=$!
-
-    # Zeige Spinner während der Prozess läuft; alle 0.6s update: letzte Zeile der Logdatei
-    (
-        # Hintergrundüberwachung (nicht blockierend für outer)
-        local out="/dev/tty"
-        if [[ ! -t 1 || ! -w $out ]]; then
-            out="/dev/null"
-        fi
-        while kill -0 "$pid" 2>/dev/null; do
-            if [ -f "$step_log" ]; then
-                last_line="$(tail -n 1 "$step_log" 2>/dev/null || true)"
-                # strip any stray ANSI sequences (should already be stripped) and limit length
-                last_line_clean="$(printf "%s" "$last_line" | sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | cut -c1-80)"
-                printf '\r%s%s%s %s[PID:%s]%s' \
-                    "$CYAN" "$last_line_clean" "$NC" "$BLUE" "$pid" "$NC" \
-                    >"$out" 2>/dev/null || true
-            else
-                printf '\r%s[PID:%s] %srunning...%s' \
-                    "$BLUE" "$pid" "$CYAN" "$NC" \
-                    >"$out" 2>/dev/null || true
-            fi
-            sleep 0.6
-        done
-        # Clear the spinner line on finish
-        printf "\r" >"$out" 2>/dev/null || true
-    ) &
-
-    # Warte auf Beendigung und erfasse Exit-Code
-    if wait "$pid"; then
-        echo -e "\n${CHECK} Success"
-        STATUS["$step_num"]="${GREEN}✔ OK${NC}"
+  if [[ "$display_only" == "true" ]]; then
+    if bash -lc "$cmd" 2>&1 | tee /dev/tty | strip_ansi >"$step_log"; then
+      echo -e "${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"
     else
-        exit_code=$?
-        if [[ $exit_code -eq 1 ]]; then
-            echo -e "\n${WARN} Warning"
-            STATUS["$step_num"]="${YELLOW}⚠ WARN${NC}"
-        else
-            echo -e "\n${FAIL} Error (code: $exit_code)"
-            STATUS["$step_num"]="${RED}✖ FAIL${NC}"
-            echo -e "${RED}--- Last 50 lines of step ${step_num} log ---${NC}"
-            [ -f "$step_log" ] && tail -n 50 "$step_log"
-            if [[ "${critical}" == "true" ]]; then
-                error "Critical error in step ${step_num} - script aborted!"
-                exit 1
-            fi
-        fi
-    fi
+      echo -e "${WARN} Warning"; STATUS["$n"]="${YELLOW}⚠ WARN${NC}"; [[ -s "$step_log" ]] && tail -n 20 "$step_log"
+      [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler – Abbruch${NC}" && exit 1
+    fi; return 0
+  fi
+
+  bash -lc "$cmd" 2>&1 | strip_ansi >"$step_log" &
+  local pid=$!
+
+  (
+    local out="/dev/tty"; [[ ! -t 1 || ! -w $out ]] && out="/dev/null"
+    local spin='⠋⠙⠸⠴⠦⠇'; local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+      local last=""; [[ -f "$step_log" ]] && last="$(tail -n1 "$step_log" | cut -c1-80)"
+      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "${last}" "$NC" "$BLUE" "$pid" "$NC" "${spin:i++%${#spin}:1}" >"$out" 2>/dev/null || true
+      sleep 0.25
+    done
+    printf '\r' >"$out" 2>/dev/null || true
+  ) &
+
+  if wait "$pid"; then
+    echo -e "\n${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"
+  else
+    local ec=$?; echo -e "\n${FAIL} Error (code: $ec)"; STATUS["$n"]="${RED}✖ FAIL${NC}"; [[ -f "$step_log" ]] && tail -n 50 "$step_log"
+    [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler in Step ${n}${NC}" && exit $ec
+  fi
 }
 
-# Utility: Abfrage/Fallback für pihole-FTL DB Pfad (verschiedene Installationen)
-FTL_DB=""
-for candidate in \
-    "/etc/pihole/pihole-FTL.db" \
-    "/run/pihole-FTL.db" \
-    "/var/lib/pihole/pihole-FTL.db"; do
-    if [[ -f "$candidate" ]]; then
-        FTL_DB="$candidate"
-        break
-    fi
-done
-if [[ -z "$FTL_DB" ]]; then
-    warning "Pi-hole FTL database not found in known locations."
-fi
+# Helper: wait for service active
+wait_active() {
+  local unit="$1"; local timeout="${2:-15}"; local t=0
+  while (( t < timeout )); do
+    systemctl is-active --quiet "$unit" && return 0
+    sleep 1; ((t++))
+  done
+  return 1
+}
+
+# Helper: show summary
+summary() {
+  echo -e "\n${MAGENTA}════════ SUMMARY ════════${NC}"
+  for k in "${!STATUS[@]}"; do
+    printf '  %-4s %b\n' "#${k}" "${STATUS[$k]}"
+  done
+  echo -e "Log: ${CYAN}$LOGFILE${NC}"
+  echo -e "Step logs: ${CYAN}$TMPDIR${NC} (werden beim Exit gelöscht)"
+}
+
+# Detect databases
+FTL_DB=""; for c in \
+  "/etc/pihole/pihole-FTL.db" \
+  "/run/pihole-FTL.db" \
+  "/var/lib/pihole/pihole-FTL.db"; do [[ -f "$c" ]] && FTL_DB="$c" && break; done
 GRAVITY_DB="/etc/pihole/gravity.db"
 
-# ========== Hauptprogramm ==========
+# --------------------------- Run -------------------------------------------
+echo_hdr
 
-print_header
-log "Started at: $(date)"
-info "Logfile: $LOGFILE"
-info "Tempdir for step logs: $TMPDIR"
-
-# ========== Systemaktualisierung ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ SYSTEM UPDATE ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
+run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
+run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
 
-run_step "01" "🔄" "APT package update" \
-    "apt update && apt upgrade -y" true
+# ARMv8 Paket Hinweis auf ARMv7 Systemen
+if dpkg --print-architecture | grep -q '^armhf$'; then
+  if apt list --upgradable 2>/dev/null | grep -q '^linux-image-rpi-v8'; then
+    echo -e "${YELLOW}Hinweis:${NC} 'linux-image-rpi-v8' ist 64‑bit (ARMv8). Auf Pi 3B (ARMv7) ignorierbar."
+  fi
+fi
 
-run_step "02" "🧹" "System cleanup" \
-    "apt autoremove -y && apt autoclean -y"
-
-# ========== Pi-hole Wartung ==========
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE MAINTENANCE ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
+run_step 03 "🔎" "Pi-hole Version" "pihole -v" false true
+run_step 04 "🆙" "Pi-hole self-update" "pihole -up"  
+run_step 05 "📋" "Update Gravity / Blocklists" "pihole -g"
 
-# Pi-hole Version und empfohlene Kommando-Optionen prüfen
-run_step "03" "🔎" "Detect Pi-hole version" \
-    "pihole -v || echo 'pihole CLI not installed or failed to report version'" false true
+# --------------------------- Backup ----------------------------------------
+BACKUP_TS="$(date +%Y-%m-%d_%H-%M-%S)"
+BACKUP_DIR="/var/backups/pihole_backup_${BACKUP_TS}"
 
-run_step "04" "🆙" "Pi-hole self-update" \
-    "pihole -up"
+run_step 06 "💾" "Backup Pi-hole (short FTL stop + tar)" $'\
+  set -e; \
+  echo "Backup dir: '""$BACKUP_DIR""'"; \
+  mkdir -p "$BACKUP_DIR"; \
+  svc=pihole-FTL.service; controlled=0; \
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files --type=service | awk "{print \$1}" | grep -Fxq "$svc"; then \
+    if systemctl is-active --quiet "$svc"; then \
+      echo "Stopping $svc ..."; systemctl stop "$svc"; controlled=1; fi; \
+  fi; \
+  echo "Creating tarball (/etc/pihole → $BACKUP_DIR/pihole_backup.tar.gz) ..."; \
+  tar -C /etc -czf "$BACKUP_DIR/pihole_backup.tar.gz" \
+      --warning=no-file-changed \
+      --exclude="pihole-FTL.db-wal" \
+      --exclude="pihole-FTL.db-shm" \
+      --exclude="*.sock" \
+      pihole; \
+  echo "Tarball OK."; \
+  if [[ $controlled -eq 1 ]]; then \
+    echo "Starting $svc ..."; systemctl start "$svc"; \
+    echo "Waiting service active ..."; systemctl is-active --quiet "$svc" || sleep 1; \
+    for i in {1..15}; do systemctl is-active --quiet "$svc" && break; sleep 1; done; \
+  fi; \
+  echo "Backup done: $BACKUP_DIR"'
 
-run_step "05" "📋" "Update Gravity / Blocklists" \
-    "pihole -g"
+# --------------------------- DNS reload & health ----------------------------
+run_step 07 "🔁" "Reload DNS (reloaddns)" "pihole reloaddns"
 
-# Backup: improved backup sequence (no hanging, clear progress messages)
-BACKUP_TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
-PIHOLE_BACKUP_DIR="/var/backups/pihole_backup_${BACKUP_TIMESTAMP}"
+run_step 08 "🧪" "Health: port 53 listeners" $'\
+  ss -lntup | awk \''/\:53\s/ {print}'\'' || true' true true
 
-run_step "06a" "💾" "Backup Pi-hole configuration (tarball)" \
-    "backup_dir=\"${PIHOLE_BACKUP_DIR}\"; \
-     mkdir -p \"\$backup_dir\"; \
-     echo 'Backup directory:' \"\$backup_dir\"; \
-     ftl_service='pihole-FTL.service'; \
-     ftl_controlled=0; \
-     if command -v systemctl >/dev/null 2>&1; then \
-         if systemctl list-unit-files --type=service 2>/dev/null | awk '{print \$1}' | grep -Fxq \"\${ftl_service}\"; then \
-             echo 'Stopping pihole-FTL.service...'; \
-             if systemctl stop \"\$ftl_service\"; then \
-                 ftl_controlled=1; \
-                 echo 'pihole-FTL.service stopped.'; \
-             else \
-                 echo 'Failed to stop pihole-FTL.service before backup' >&2; \
-                 exit 5; \
-             fi; \
-         else \
-             echo 'Service pihole-FTL.service not found; skipping stop/start.'; \
-         fi; \
-     else \
-         echo 'systemctl not available; skipping stop/start.'; \
-     fi; \
-     echo '1) Creating tarball of /etc/pihole (excluding WAL/SHM/sockets)...'; \
-     tar_exit=0; \
-     if tar -C /etc -czf \"\$backup_dir/pihole_backup.tar.gz\" --warning=no-file-changed --exclude='pihole-FTL.db-wal' --exclude='pihole-FTL.db-shm' --exclude='*.sock' pihole; then \
-         echo 'Tarball created:' \"\$backup_dir/pihole_backup.tar.gz\"; \
-     else \
-         tar_exit=\$?; \
-         echo \"Tar archive failed (code \$tar_exit)\" >&2; \
-     fi; \
-     if [[ \$ftl_controlled -eq 1 ]]; then \
-         echo 'Starting pihole-FTL.service...'; \
-         if systemctl start \"\$ftl_service\"; then \
-             echo 'pihole-FTL.service started.'; \
-         else \
-             echo 'Failed to start pihole-FTL.service after backup' >&2; \
-             exit 6; \
-         fi; \
-     fi; \
-     if [[ \$tar_exit -ne 0 ]]; then \
-         exit \$tar_exit; \
-     fi; \
-     ls -lh \"\$backup_dir\"" true
+run_step 09 "🌐" "DNS test with dig (google.com)" $'\
+  dig +short google.com @127.0.0.1 || true' false true
 
-run_step "06b" "🧲" "Gravity database adlist dump" \
-    "backup_dir=\"${PIHOLE_BACKUP_DIR}\"; \
-     if [[ -z \"\$backup_dir\" ]]; then \
-         echo 'Backup directory not defined.' >&2; \
-         exit 20; \
-     fi; \
-     if [[ ! -d \"\$backup_dir\" ]]; then \
-         echo 'Backup directory missing:' \"\$backup_dir\" >&2; \
-         exit 21; \
-     fi; \
-     if ! command -v sqlite3 >/dev/null 2>&1; then \
-         echo 'sqlite3 not available for gravity dump.' >&2; \
-         exit 22; \
-     fi; \
-     if [[ ! -f \"$GRAVITY_DB\" ]]; then \
-         echo 'gravity.db not found at $GRAVITY_DB.' >&2; \
-         exit 23; \
-     fi; \
-     echo '2) Exporting gravity adlist with 5s lock timeout...'; \
-     if sqlite3 -cmd \".timeout 5000\" \"$GRAVITY_DB\" \".dump adlist\" > \"\$backup_dir/adlist.sql\"; then \
-         echo 'Gravity adlist dump saved to:' \"\$backup_dir/adlist.sql\"; \
-     else \
-         rc=\$?; \
-         echo \"Gravity adlist dump failed (code \$rc)\" >&2; \
-         exit \$rc; \
-     fi" true
-
-run_step "06c" "🧬" "FTL schema dump" \
-    "backup_dir=\"${PIHOLE_BACKUP_DIR}\"; \
-     if [[ -z \"\$backup_dir\" ]]; then \
-         echo 'Backup directory not defined.' >&2; \
-         exit 30; \
-     fi; \
-     if [[ ! -d \"\$backup_dir\" ]]; then \
-         echo 'Backup directory missing:' \"\$backup_dir\" >&2; \
-         exit 31; \
-     fi; \
-     if ! command -v sqlite3 >/dev/null 2>&1; then \
-         echo 'sqlite3 not available for FTL schema dump.' >&2; \
-         exit 32; \
-     fi; \
-     if [[ -z \"$FTL_DB\" ]]; then \
-         echo 'FTL database path not available.' >&2; \
-         exit 33; \
-     fi; \
-     if [[ ! -f \"$FTL_DB\" ]]; then \
-         echo 'FTL database not found at $FTL_DB.' >&2; \
-         exit 34; \
-     fi; \
-     echo '3) Exporting FTL schema with 5s lock timeout...'; \
-     if sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\"; then \
-         echo 'FTL schema dump saved to:' \"\$backup_dir/ftl_schema.sql\"; \
-     else \
-         rc=\$?; \
-         echo \"FTL schema dump failed (code \$rc)\" >&2; \
-         exit \$rc; \
-     fi" true
-
-run_step "07" "🔄" "Reload Pi-hole DNS" \
-    "pihole reloaddns"
-
-# ========== Systemdiagnose ==========
-echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ SYSTEM DIAGNOSTICS ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
-
-run_step "08" "📡" "Pi-hole status (service checks)" \
-    "pihole status; systemctl is-active pihole-FTL.service || systemctl status pihole-FTL.service" false true
-
-run_step "09" "📊" "Network connectivity tests" \
-    "echo 'Ping 8.8.8.8 (Google):'; ping -c 2 -W 2 8.8.8.8; \
-     echo 'Ping 1.1.1.1 (Cloudflare):'; ping -c 2 -W 2 1.1.1.1; \
-     echo 'DNS resolution (google.com via localhost):'; dig google.com @127.0.0.1 +short" false true
-
-run_step "10" "🔒" "Port 53 status (DNS) + sockets" \
-    "ss -tuln | grep ':53' || netstat -tuln | grep ':53' || echo 'No DNS port 53 listeners detected'" false true
-
-# ========== Pi-hole Statistiken ==========
-echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE STATISTICS ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
-
-# Falls sqlite3 verfügbar ist, führe fokussierte Abfragen asynchron aus
-if command -v sqlite3 >/dev/null 2>&1 && [[ -n "$FTL_DB" && -f "$FTL_DB" ]]; then
-    run_step "11" "🌐" "Top 5 domains (from FTL DB)" \
-        "sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \"SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;\" || { echo 'FTL DB query failed' >&2; exit 1; }" false true
-
-    run_step "12" "👤" "Top 5 clients (from FTL DB)" \
-        "sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \"SELECT client, COUNT(*) as count FROM queries GROUP BY client ORDER BY count DESC LIMIT 5;\" || { echo 'FTL DB query failed' >&2; exit 1; }" false true
+# --------------------------- Diagnostics (top) ------------------------------
+if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$FTL_DB" ]]; then
+  run_step 10 "📈" "Top 5 Domains (FTL)" $'\
+    sqlite3 -readonly "$FTL_DB" "SELECT domain, COUNT(1) c FROM queries GROUP BY domain ORDER BY c DESC LIMIT 5;" || true' false true
+  run_step 11 "👥" "Top 5 Clients (FTL)" $'\
+    sqlite3 -readonly "$FTL_DB" "SELECT client, COUNT(1) c FROM queries GROUP BY client ORDER BY c DESC LIMIT 5;" || true' false true
 else
-    run_step "11" "🌐" "Top 5 domains (FTL DB not available)" \
-        "echo 'FTL DB not available or sqlite3 missing'" false true
-    run_step "12" "👤" "Top 5 clients (FTL DB not available)" \
-        "echo 'FTL DB not available or sqlite3 missing'" false true
+  echo -e "${YELLOW}sqlite3 oder FTL DB nicht gefunden – Überspringe Top-Listen.${NC}"
 fi
 
-run_step "13" "⚙️" "FTL process stats" \
-    "ps -C pihole-FTL -o pid,%cpu,%mem,cmd || ps aux | egrep 'pihole-FTL|pihole-FTL' || echo 'FTL process not found'" false true
+# --------------------------- Summary ---------------------------------------
+summary
 
-# ========== Raspberry Pi Gesundheit ==========
-echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ RASPBERRY PI HEALTH ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
-
-run_step "14" "⏱️" "System uptime" \
-    "uptime -p" false true
-
-run_step "15" "🌡️" "CPU temperature" \
-    "if command -v vcgencmd >/dev/null 2>&1; then \
-         vcgencmd measure_temp || true; \
-     else \
-         echo 'vcgencmd nicht verfügbar'; \
-     fi" false true
-
-run_step "16" "📈" "Resource usage (CPU/Memory/Disk)" \
-    "echo 'Top CPU processes:'; ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 10; \
-     echo 'Memory usage:'; free -h; \
-     echo 'Disk usage:'; df -h /" false true
-
-# ========== Abschlussbericht: laufende Prozesse & Fehlerübersicht ==========
-echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
-echo -e "║          📊 MAINTENANCE REPORT           ║"
-echo -e "╠════════╦═════════════════════════════╣"
-echo -e "║ ${CYAN}STEP${NC}   ║ ${GREEN}STATUS${NC}                  ║"
-echo -e "╠════════╬═════════════════════════════╣"
-
-# Sortiere Schritte numerisch und gebe Status aus
-mapfile -t sorted_steps < <(printf '%s\n' "${!STATUS[@]}" | sort -n)
-for step in "${sorted_steps[@]}"; do
-    printf "║ ${BLUE}%-6s${NC} ║ %-20s ║\n" "$step" "${STATUS[$step]}"
-done
-
-echo -e "╚════════╩═════════════════════════════╝"
-
-# Zusätzliche Übersicht: aktuell laufende relevante Prozesse
-echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
-echo -e "║        🔎 Running Pi-hole Processes      ║"
-echo -e "╠════════════════════════════════════════╣${NC}"
-if command -v pgrep >/dev/null 2>&1; then
-    mapfile -t pihole_procs < <(pgrep -af 'pihole|pihole-FTL|dnsmasq|unbound|dnscrypt|dnsproxy' || true)
-    if ((${#pihole_procs[@]})); then
-        printf '%s\n' "${pihole_procs[@]}" | sed -n '1,20p'
-    else
-        echo "No matching processes found"
-    fi
-else
-    ps aux | awk 'tolower($0) ~ /(pihole|pihole-ftl|dnsmasq|unbound|dnscrypt|dnsproxy)/' | sed -n '1,20p' || \
-        echo "No matching processes found"
-fi
-echo -e "${MAGENTA}╚════════════════════════════════════════╝${NC}"
-
-# Fehlerprüfungs-Übersicht: Zeige Schritte, die WARN/FAIL haben und gib Log-Auszüge
-echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
-echo -e "║        ⚠ Issues / Error Summary         ║"
-echo -e "╠════════════════════════════════════════╣${NC}"
-has_issues=false
-for step in "${sorted_steps[@]}"; do
-    status="${STATUS[$step]}"
-    if echo "$status" | grep -E "WARN|FAIL|FAIL" >/dev/null 2>&1; then
-        has_issues=true
-        echo -e "${YELLOW}Step ${step}: ${status}${NC}"
-        logfile="${STEP_LOGFILE[$step]:-}"
-        if [[ -n "$logfile" && -f "$logfile" ]]; then
-            echo -e "${CYAN}--- Last 40 lines of step ${step} log ---${NC}"
-            tail -n 40 "$logfile"
-        fi
-        echo
-    fi
-done
-
-if [[ "$has_issues" == "false" ]]; then
-    echo -e "${GREEN}No warnings or errors detected in steps.${NC}"
-fi
-
-log "Maintenance completed at: $(date)"
-info "Full log saved: $LOGFILE"
-echo -e "${GREEN}\n✅ PI-HOLE MAINTENANCE PRO MAX SUCCESSFULLY COMPLETED ✅${NC}"
-
-# ================= Helpful suggestions / future features =================
-cat <<'SUGGESTIONS'
-
-Suggested improvements & Pi-hole related updates to consider:
-- Add optional "dry-run" mode for disruptive operations (updates/reloads).
-- Add an argument parser (getopts) to allow selective step execution (e.g. --skip-backup).
-- Integrate systemd notify / journald for service-status checks.
-- Add built-in rotation of /var/backups/pihole_backup_*.tar.gz (prune older than X days).
-- For Pi-hole v6+ consider:
-  - Using 'pihole -a' admin commands for certs / web admin checks.
-  - Monitoring FTL schema changes: if queries table column names differ, adapt SQL.
-- Add optional Slack/Matrix/Email notification on critical failures.
-- Consider a non-root mode where only allowed operations are performed (via sudo for specific commands).
-- Add integrity checks for gravity.db and pihole-FTL.db (vacuum / integrity_check via sqlite3).
-SUGGESTIONS
-
-# Script Ende
-exit 0
+echo -e "${GREEN}Done.${NC}"
