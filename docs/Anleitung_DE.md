@@ -10,7 +10,7 @@ Dieses Skript dient der vollständigen Pflege und Wartung eines Pi-hole v6.x Sys
 - Healthchecks (Ping, dig, Port 53, FTL)
 - Statistiken zu Top-Domains und -Clients
 - Ressourcen- und Temperaturanzeige des Raspberry Pi
-- Mehrstufiges Backup (Tarball + Gravity-`adlist`-Dump + FTL-Schema-Export)
+
 - Logging aller Schritte in `/var/log/`
 
 ## 📁 Backup
