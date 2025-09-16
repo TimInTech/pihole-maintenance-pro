@@ -24,7 +24,6 @@ NC='\033[0m' # No Color
 CHECK="${GREEN}✔${NC}"
 WARN="${YELLOW}⚠${NC}"
 FAIL="${RED}✖${NC}"
-ARROW="${BLUE}➜${NC}"
 
 # Temporärer Ordner für Step-Logs
 TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
@@ -35,7 +34,6 @@ LOGFILE=""
 
 # Statusvariablen
 declare -A STATUS        # Schritt -> status string
-declare -A STEP_PID      # Schritt -> PID (falls Hintergrund)
 declare -A STEP_LOGFILE  # Schritt -> per-step logfile
 
 # Utility: strip ANSI escape sequences (works without perl)
@@ -52,10 +50,6 @@ log() {
 info() {
     echo -e "${BLUE}[INFO]${NC} $1"
     [ -n "${LOGFILE:-}" ] && echo "[INFO] $1" >> "$LOGFILE"
-}
-warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-    [ -n "${LOGFILE:-}" ] && echo "[WARNING] $1" >> "$LOGFILE"
 }
 error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
@@ -87,26 +81,6 @@ print_header() {
         echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
     fi
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════════╝${NC}"
-}
-
-# Spinner für laufende Tasks - schreibt ausschließlich auf das TTY (wenn vorhanden)
-spinner() {
-    local pid=$1
-    local prefix="${2:-}"
-    local spin_chars="|/-\\"
-    local i=0
-    # If we have a TTY, write spinner there to avoid polluting logs
-    local out="/dev/tty"
-    if [[ ! -t 1 || ! -w $out ]]; then
-        out="/dev/null"
-    fi
-    while kill -0 "$pid" 2>/dev/null; do
-        i=$(( (i+1) %4 ))
-        # Print prefix + state + spinner char
-        printf "\r${prefix} %s %s" "${CYAN}running${NC}" "${spin_chars:i:1}" >"$out" 2>/dev/null || true
-        sleep 0.15
-    done
-    printf "\r" >"$out" 2>/dev/null || true
 }
 
 # Eine Step-Funktion, die den Befehl asynchron ausführt und live anzeigt.
@@ -156,7 +130,6 @@ run_step() {
     # Ensure the command's own output goes to the step log only (cleaned).
     bash -lc "$cmd" 2>&1 | strip_ansi > "$step_log" &
     local pid=$!
-    STEP_PID["$step_num"]=$pid
 
     # Zeige Spinner während der Prozess läuft; alle 0.6s update: letzte Zeile der Logdatei
     (
@@ -170,9 +143,13 @@ run_step() {
                 last_line="$(tail -n 1 "$step_log" 2>/dev/null || true)"
                 # strip any stray ANSI sequences (should already be stripped) and limit length
                 last_line_clean="$(printf "%s" "$last_line" | sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | cut -c1-80)"
-                printf "\r${CYAN}%s${NC} %s" "${last_line_clean}" "${BLUE}[PID:${pid}]${NC}" >"$out" 2>/dev/null || true
+                printf '\r%s%s%s %s[PID:%s]%s' \
+                    "$CYAN" "$last_line_clean" "$NC" "$BLUE" "$pid" "$NC" \
+                    >"$out" 2>/dev/null || true
             else
-                printf "\r${BLUE}[PID:${pid}] ${CYAN}running...${NC}" >"$out" 2>/dev/null || true
+                printf '\r%s[PID:%s] %srunning...%s' \
+                    "$BLUE" "$pid" "$CYAN" "$NC" \
+                    >"$out" 2>/dev/null || true
             fi
             sleep 0.6
         done
@@ -202,18 +179,21 @@ run_step() {
     fi
 }
 
-# Utility: prüfe Verfügbarkeit von sqlite3 und setze passende Befehle
-SQLITE_BIN="$(command -v sqlite3 || true)"
-if [[ -z "$SQLITE_BIN" ]]; then
-    warning "sqlite3 nicht gefunden. Einige DB-Abfragen werden fehlschlagen."
-fi
-
 # Utility: Abfrage/Fallback für pihole-FTL DB Pfad (verschiedene Installationen)
-FTL_DB="/etc/pihole/pihole-FTL.db"
-GRAVITY_DB="/etc/pihole/gravity.db"
-if [[ ! -f "$FTL_DB" && -f "/etc/pihole/pihole-FTL.db" ]]; then
-    FTL_DB="/etc/pihole/pihole-FTL.db"
+FTL_DB=""
+for candidate in \
+    "/etc/pihole/pihole-FTL.db" \
+    "/run/pihole-FTL.db" \
+    "/var/lib/pihole/pihole-FTL.db"; do
+    if [[ -f "$candidate" ]]; then
+        FTL_DB="$candidate"
+        break
+    fi
+done
+if [[ -z "$FTL_DB" ]]; then
+    warning "Pi-hole FTL database not found in known locations."
 fi
+GRAVITY_DB="/etc/pihole/gravity.db"
 
 # ========== Hauptprogramm ==========
 
@@ -333,9 +313,13 @@ run_step "06c" "🧬" "FTL schema dump" \
          echo 'sqlite3 not available for FTL schema dump.' >&2; \
          exit 32; \
      fi; \
+     if [[ -z \"$FTL_DB\" ]]; then \
+         echo 'FTL database path not available.' >&2; \
+         exit 33; \
+     fi; \
      if [[ ! -f \"$FTL_DB\" ]]; then \
          echo 'FTL database not found at $FTL_DB.' >&2; \
-         exit 33; \
+         exit 34; \
      fi; \
      echo '3) Exporting FTL schema with 5s lock timeout...'; \
      if sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\"; then \
@@ -367,7 +351,7 @@ run_step "10" "🔒" "Port 53 status (DNS) + sockets" \
 echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE STATISTICS ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
 
 # Falls sqlite3 verfügbar ist, führe fokussierte Abfragen asynchron aus
-if command -v sqlite3 >/dev/null 2>&1 && [ -f "$FTL_DB" ]; then
+if command -v sqlite3 >/dev/null 2>&1 && [[ -n "$FTL_DB" && -f "$FTL_DB" ]]; then
     run_step "11" "🌐" "Top 5 domains (from FTL DB)" \
         "sqlite3 -cmd \".timeout 5000\" \"$FTL_DB\" \"SELECT domain, COUNT(*) as count FROM queries GROUP BY domain ORDER BY count DESC LIMIT 5;\" || { echo 'FTL DB query failed' >&2; exit 1; }" false true
 
@@ -409,7 +393,7 @@ echo -e "║ ${CYAN}STEP${NC}   ║ ${GREEN}STATUS${NC}                  ║"
 echo -e "╠════════╬═════════════════════════════╣"
 
 # Sortiere Schritte numerisch und gebe Status aus
-sorted_steps=($(printf '%s\n' "${!STATUS[@]}" | sort -n))
+mapfile -t sorted_steps < <(printf '%s\n' "${!STATUS[@]}" | sort -n)
 for step in "${sorted_steps[@]}"; do
     printf "║ ${BLUE}%-6s${NC} ║ %-20s ║\n" "$step" "${STATUS[$step]}"
 done
@@ -420,7 +404,17 @@ echo -e "╚════════╩═════════════�
 echo -e "${MAGENTA}\n╔════════════════════════════════════════╗"
 echo -e "║        🔎 Running Pi-hole Processes      ║"
 echo -e "╠════════════════════════════════════════╣${NC}"
-ps aux | egrep -i 'pihole|pihole-FTL|dnsmasq|unbound|dnscrypt|dnsproxy' | sed -n '1,20p' || echo "No matching processes found"
+if command -v pgrep >/dev/null 2>&1; then
+    mapfile -t pihole_procs < <(pgrep -af 'pihole|pihole-FTL|dnsmasq|unbound|dnscrypt|dnsproxy' || true)
+    if ((${#pihole_procs[@]})); then
+        printf '%s\n' "${pihole_procs[@]}" | sed -n '1,20p'
+    else
+        echo "No matching processes found"
+    fi
+else
+    ps aux | awk 'tolower($0) ~ /(pihole|pihole-ftl|dnsmasq|unbound|dnscrypt|dnsproxy)/' | sed -n '1,20p' || \
+        echo "No matching processes found"
+fi
 echo -e "${MAGENTA}╚════════════════════════════════════════╝${NC}"
 
 # Fehlerprüfungs-Übersicht: Zeige Schritte, die WARN/FAIL haben und gib Log-Auszüge
