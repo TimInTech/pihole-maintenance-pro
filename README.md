@@ -10,7 +10,7 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 - Colored output with symbols and progress indicators
 - System package update and cleanup via `apt`
 - Pi-hole self-update and Gravity blocklist refresh
-- Backup of `adlist` and `domainlist` using `pihole-FTL sqlite3`
+- Backup of `adlist` and FTL schema using `sqlite3`
 - DNS reload and basic network diagnostics (ping, dig, port check)
 - Statistics for top domains and clients
 - Raspberry Pi health info (uptime, temperature, resource usage)
@@ -24,7 +24,7 @@ This script provides a comprehensive maintenance routine for **Pi-hole v6.x** in
 ### v5.0
 - **Step-by-step flow** with colored status output  
 - **Full logging** to `/var/log/pihole_maintenance_pro_<timestamp>.log`  
-- **Native backups** via `pihole-FTL sqlite3` for `adlist` & `domainlist` (no external `sqlite3` dependency)  
+- **Native backups** for `adlist` & FTL schema using `sqlite3`
 - **Extra stats**: Top domains & top clients  
 - **Extra Raspberry Pi health info**: uptime, temperature, resource usage  
 - **Cron-ready**: OS/Pi-hole updates, gravity refresh, DNS reload, ping/dig/port checks  
@@ -49,10 +49,10 @@ sudo ./pihole_maintenance_pro.sh
 
 📁 Backups
 
-If pihole-FTL sqlite3 is available, two backup files will be saved to:
+If `sqlite3` is available, two backup files will be saved to:
 
 /etc/pihole/backup_v6/adlist.sql
-/etc/pihole/backup_v6/domainlist.sql
+/etc/pihole/backup_v6/ftl_schema.sql
 
 Backups will be skipped if write permissions are missing.
 
