@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Pi-hole v6.x - Full Maintenance PRO MAX (v5.1)
-# Version 5.1 - 2025-09-16
+# Pi-hole v6.x - Full Maintenance PRO MAX (v5.1.1)
+# Version 5.1.1 - 2025-09-16
 # By Tim & ChatGPT ^=^z^
 #
-# Verbesserte Version: Zeigt laufende Hintergrundprozesse dynamisch an,
-# detailliertere grafische Ausgabe, pro-Step-Logs und Abschlussübersicht
+# Fixes for: avoid spinner/monitor contaminating step logs,
+# strip ANSI color codes from per-step logs shown in-report,
+# print spinner output to tty only, improved header box.
 #
-# Qualitätsmaßnahmen: set -u -o pipefail, keine harten Secrets, temporäre Logs
-set -u -o pipefail
+set -euo pipefail
 IFS=$'\n\t'
 
 # Farben und Symbole
@@ -35,6 +35,12 @@ LOGFILE=""
 declare -A STATUS        # Schritt -> status string
 declare -A STEP_PID      # Schritt -> PID (falls Hintergrund)
 declare -A STEP_LOGFILE  # Schritt -> per-step logfile
+
+# Utility: strip ANSI escape sequences (works without perl)
+strip_ansi() {
+    # usage: some_command | strip_ansi > file
+    sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'
+}
 
 # Logging-Funktionen (sowohl stdout als auch Gesamtlog)
 log() {
@@ -68,9 +74,9 @@ exec > >(tee -a "$LOGFILE") 2>&1
 # Header-Funktion (verbesserte grafische Darstellung)
 print_header() {
     clear
-    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════╗"
-    echo -e "║   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.1${MAGENTA})  ║"
-    echo -e "╠════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.1.1${MAGENTA})  ║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
     # Zeige Pi-hole Version falls vorhanden
     if command -v pihole >/dev/null 2>&1; then
         PH_VER="$(pihole -v 2>/dev/null || true)"
@@ -78,21 +84,26 @@ print_header() {
     else
         echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
     fi
-    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════════╝${NC}"
 }
 
-# Spinner für laufende Tasks
+# Spinner für laufende Tasks - schreibt ausschließlich auf das TTY (wenn vorhanden)
 spinner() {
     local pid=$1
     local prefix="${2:-}"
     local spin_chars='|/-\'
     local i=0
+    # If we have a TTY, write spinner there to avoid polluting logs
+    local out="/dev/tty"
+    if [[ ! -t 1 || ! -w $out ]]; then
+        out="/dev/null"
+    fi
     while kill -0 "$pid" 2>/dev/null; do
         i=$(( (i+1) %4 ))
-        printf "\r${prefix} %s ${spin_chars:i:1}" "${CYAN}running${NC}"
+        printf "\r${prefix} %s %s" "${CYAN}running${NC}" "${spin_chars:i:1}" >"$out" 2>/dev/null || true
         sleep 0.15
     done
-    printf "\r"
+    printf "\r" >"$out" 2>/dev/null || true
 }
 
 # Eine Step-Funktion, die den Befehl asynchron ausführt und live anzeigt.
@@ -118,11 +129,11 @@ run_step() {
     echo -e "${BLUE}║ ${symbol} ${description}${NC}"
     echo -en "${BLUE}╚═>${NC} "
 
-    # Wenn nur Anzeige (z.B. status commands), führe synchron aus und show output
+    # Wenn nur Anzeige (z.B. status commands), führe synchron aus und show output (strip colors to per-step logfile)
     if [[ "${display_only}" == "true" ]]; then
-        bash -lc "$cmd" 2>&1 | tee "$step_log"
-        local exit_code=${PIPESTATUS[0]:-0}
-        if [[ $exit_code -eq 0 ]]; then
+        # Run command and both show on console and write a cleaned copy to step log
+        # Use a subshell to preserve exit code
+        if bash -lc "$cmd" 2>&1 | tee /dev/tty | strip_ansi > "$step_log"; then
             echo -e "${CHECK} Success"
             STATUS["$step_num"]="${GREEN}✔ OK${NC}"
         else
@@ -137,25 +148,33 @@ run_step() {
         return 0
     fi
 
-    # Starte den Befehl im Hintergrund und schreibe stdout/stderr in logfile
+    # Starte den Befehl im Hintergrund und schreibe stdout/stderr in logfile (ANSI-codes entfernt)
     # Wir verwenden bash -lc um komplexe Kommandos/Mehrzeiler zu unterstützen.
-    bash -lc "$cmd" > "$step_log" 2>&1 &
+    # Ensure the command's own output goes to the step log only (cleaned).
+    bash -lc "$cmd" 2>&1 | strip_ansi > "$step_log" &
     local pid=$!
     STEP_PID["$step_num"]=$pid
 
-    # Zeige Spinner während der Prozess läuft; alle 1s update: letzte Zeile der Logdatei
+    # Zeige Spinner während der Prozess läuft; alle 0.6s update: letzte Zeile der Logdatei
     (
         # Hintergrundüberwachung (nicht blockierend für outer)
+        local out="/dev/tty"
+        if [[ ! -t 1 || ! -w $out ]]; then
+            out="/dev/null"
+        fi
         while kill -0 "$pid" 2>/dev/null; do
-            # Zeige letzte Zeile der laufenden Ausgabe (falls vorhanden)
             if [ -f "$step_log" ]; then
                 last_line="$(tail -n 1 "$step_log" 2>/dev/null || true)"
-                printf "\r${CYAN}%s${NC} %s" "${last_line:0:60}" "${BLUE}[PID:${pid}]${NC}"
+                # strip any stray ANSI sequences (should already be stripped) and limit length
+                last_line_clean="$(printf "%s" "$last_line" | sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | cut -c1-60)"
+                printf "\r${CYAN}%s${NC} %s" "${last_line_clean}" "${BLUE}[PID:${pid}]${NC}" >"$out" 2>/dev/null || true
             else
-                printf "\r${BLUE}[PID:${pid}] ${CYAN}running...${NC}"
+                printf "\r${BLUE}[PID:${pid}] ${CYAN}running...${NC}" >"$out" 2>/dev/null || true
             fi
             sleep 0.6
         done
+        # Clear the spinner line on finish
+        printf "\r" >"$out" 2>/dev/null || true
     ) &
 
     # Warte auf Beendigung und erfasse Exit-Code
@@ -226,7 +245,7 @@ run_step "05" "📋" "Update Gravity / Blocklists" \
 run_step "06" "💾" "Backup Pi-hole configuration (gravity + pihole dir)" \
     "backup_dir=\"/etc/pihole/backup_v6_$(date +%Y-%m-%d_%H-%M-%S)\"; \
      mkdir -p \"\$backup_dir\"; \
-     if [ -w \"\$backup_dir\" ]; then \
+     if [ -w \"\$backup_dir\" ] || [ -w \"/etc/pihole\" ]; then \
          echo 'Backing up /etc/pihole to' \"\$backup_dir\"; \
          cp -a /etc/pihole/* \"\$backup_dir\" 2>/dev/null || true; \
          if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$GRAVITY_DB\" ]; then \
