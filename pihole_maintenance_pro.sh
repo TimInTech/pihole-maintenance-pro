@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Pi-hole v6.x – Full Maintenance PRO MAX
-# Version: 5.2.0 (2025-07-10)
-# Authors: TimITech
-#
-# What’s new vs 5.1.2
-#  - Fix backup block quoting (removed stray backslash + comment in heredoc)
-#  - Stronger, faster backup (short, safe stop of FTL; tar with excludes)
-#  - Clearer live progress: spinner shows last log line and PID; writes only to TTY
-#  - Robust logging: all steps mirrored to /var/log + per-step logs in /tmp
-#  - Safer Pi-hole v6 commands (reloaddns / reloadlists usage left intact)
-#  - More diagnostics (ports, dig tests, top domains/clients via sqlite3)
+# Pi-hole v6.x – Full Maintenance PRO MAX  (NO-BACKUP EDITION)
+# Version: 5.3.0 (2025-09-17)
+# Authors: Tim & ChatGPT (TimInTech)
+# ----------------------------------------------------------------------------
+# Changelog (vs 5.2.0)
+#  • Entfernt: kompletter Backup/FTL-Stop-Block (häufige Hänger → rausgenommen)
+#  • Neues, klares Step-Framework mit Spinner + Live-Output (TTY‑sicher)
+#  • Optional-Flags: --no-apt, --no-upgrade, --no-gravity, --no-dnsreload
+#  • Extra-Diagnostik: Port‑53‑Check, dig‑Tests, GitHub‑Reachability, Tailscale‑Info
+#  • Saubere Logs: /var/log/pihole_maintenance_pro_<timestamp>.log (+ per‑Step)
+#  • 100% Pi‑hole v6‑kompatible Kommandos (pihole -up, -g, reloaddns)
 # ============================================================================
 set -euo pipefail
 IFS=$'\n\t'
@@ -30,6 +30,27 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
+# --------------------------- Args ------------------------------------------
+DO_APT=1; DO_UPGRADE=1; DO_GRAVITY=1; DO_DNSRELOAD=1
+while (( "$#" )); do
+  case "${1}" in
+    --no-apt) DO_APT=0 ; shift ;;
+    --no-upgrade) DO_UPGRADE=0 ; shift ;;
+    --no-gravity) DO_GRAVITY=0 ; shift ;;
+    --no-dnsreload) DO_DNSRELOAD=0 ; shift ;;
+    -h|--help)
+      cat <<EOF
+Usage: sudo ./pihole_maintenance_pro.sh [options]
+  --no-apt         Skip apt update/upgrade/autoremove
+  --no-upgrade     Skip "pihole -up"
+  --no-gravity     Skip "pihole -g"
+  --no-dnsreload   Skip "pihole reloaddns"
+EOF
+      exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
 # --------------------------- Paths & globals --------------------------------
 TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
 LOGFILE="/var/log/pihole_maintenance_pro_$(date +%Y-%m-%d_%H-%M-%S).log"
@@ -47,7 +68,7 @@ strip_ansi() { sed -r $'s/\x1B\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'; }
 echo_hdr() {
   [[ -t 1 ]] && clear || true
   echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.2.0${MAGENTA})  ║${NC}"
+  echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.3.0${MAGENTA})  ║${NC}"
   echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
   if command -v pihole >/dev/null 2>&1; then
     PH_VER="$(pihole -v 2>/dev/null || true)"
@@ -98,27 +119,17 @@ run_step() {
   fi
 }
 
-# Helper: wait for service active
-wait_active() {
-  local unit="$1"; local timeout="${2:-15}"; local t=0
-  while (( t < timeout )); do
-    systemctl is-active --quiet "$unit" && return 0
-    sleep 1; ((t++))
-  done
-  return 1
-}
-
-# Helper: show summary
 summary() {
   echo -e "\n${MAGENTA}════════ SUMMARY ════════${NC}"
-  for k in "${!STATUS[@]}"; do
+  # sort numeric by step
+  for k in $(printf '%s\n' "${!STATUS[@]}" | sort -n); do
     printf '  %-4s %b\n' "#${k}" "${STATUS[$k]}"
   done
   echo -e "Log: ${CYAN}$LOGFILE${NC}"
   echo -e "Step logs: ${CYAN}$TMPDIR${NC} (werden beim Exit gelöscht)"
 }
 
-# Detect databases
+# Detect databases (best-effort)
 FTL_DB=""; for c in \
   "/etc/pihole/pihole-FTL.db" \
   "/run/pihole-FTL.db" \
@@ -128,70 +139,80 @@ GRAVITY_DB="/etc/pihole/gravity.db"
 # --------------------------- Run -------------------------------------------
 echo_hdr
 
-echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ SYSTEM UPDATE ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
-run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
-run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
+# 00 – Quick context
+run_step 00 "🧭" "Kontext: Host & Netz" $'\
+  echo "Host: $(hostname)"; \
+  echo "Kernel: $(uname -r)"; \
+  echo "Arch: $(dpkg --print-architecture)"; \
+  ip -4 addr show scope global | awk "/inet /{print \$2, \"on\", \$NF}"; \
+  echo "Default route:"; ip route show default || true; \
+  echo "DNS servers (/etc/resolv.conf):"; grep -E "^nameserver" /etc/resolv.conf || true' false true
 
-# ARMv8 Paket Hinweis auf ARMv7 Systemen
-if dpkg --print-architecture | grep -q '^armhf$'; then
-  if apt list --upgradable 2>/dev/null | grep -q '^linux-image-rpi-v8'; then
-    echo -e "${YELLOW}Hinweis:${NC} 'linux-image-rpi-v8' ist 64‑bit (ARMv8). Auf Pi 3B (ARMv7) ignorierbar."
+# 01 – APT update/upgrade/autoclean (optional)
+if (( DO_APT == 1 )); then
+  run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
+  run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
+  if dpkg --print-architecture | grep -q '^armhf$'; then
+    if apt list --upgradable 2>/dev/null | grep -q '^linux-image-rpi-v8'; then
+      echo -e "${YELLOW}Hinweis:${NC} 'linux-image-rpi-v8' ist 64‑bit (ARMv8). Auf Pi 3B (ARMv7) ignorierbar."
+    fi
   fi
+else
+  echo -e "${YELLOW}APT‑Schritte übersprungen (--no-apt).${NC}"
 fi
 
-echo -e "${CYAN}\n█▀▀▀▀▀▀▀▀▀▀▀ PI-HOLE MAINTENANCE ▀▀▀▀▀▀▀▀▀▀▀█${NC}"
+# 03 – Pi-hole Version & Updates
 run_step 03 "🔎" "Pi-hole Version" "pihole -v" false true
-run_step 04 "🆙" "Pi-hole self-update" "pihole -up"  
-run_step 05 "📋" "Update Gravity / Blocklists" "pihole -g"
+if (( DO_UPGRADE == 1 )); then
+  run_step 04 "🆙" "Pi-hole self-update" "pihole -up"
+else
+  echo -e "${YELLOW}Pi-hole Upgrade übersprungen (--no-upgrade).${NC}"
+fi
 
-# --------------------------- Backup ----------------------------------------
-BACKUP_TS="$(date +%Y-%m-%d_%H-%M-%S)"
-BACKUP_DIR="/var/backups/pihole_backup_${BACKUP_TS}"
+# 05 – Gravity
+if (( DO_GRAVITY == 1 )); then
+  run_step 05 "📋" "Update Gravity / Blocklists" "pihole -g"
+else
+  echo -e "${YELLOW}Gravity-Update übersprungen (--no-gravity).${NC}"
+fi
 
-run_step 06 "💾" "Backup Pi-hole (short FTL stop + tar)" $'\
-  set -e; \
-  echo "Backup dir: '""$BACKUP_DIR""'"; \
-  mkdir -p "$BACKUP_DIR"; \
-  svc=pihole-FTL.service; controlled=0; \
-  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files --type=service | awk "{print \$1}" | grep -Fxq "$svc"; then \
-    if systemctl is-active --quiet "$svc"; then \
-      echo "Stopping $svc ..."; systemctl stop "$svc"; controlled=1; fi; \
-  fi; \
-  echo "Creating tarball (/etc/pihole → $BACKUP_DIR/pihole_backup.tar.gz) ..."; \
-  tar -C /etc -czf "$BACKUP_DIR/pihole_backup.tar.gz" \
-      --warning=no-file-changed \
-      --exclude="pihole-FTL.db-wal" \
-      --exclude="pihole-FTL.db-shm" \
-      --exclude="*.sock" \
-      pihole; \
-  echo "Tarball OK."; \
-  if [[ $controlled -eq 1 ]]; then \
-    echo "Starting $svc ..."; systemctl start "$svc"; \
-    echo "Waiting service active ..."; systemctl is-active --quiet "$svc" || sleep 1; \
-    for i in {1..15}; do systemctl is-active --quiet "$svc" && break; sleep 1; done; \
-  fi; \
-  echo "Backup done: $BACKUP_DIR"'
+# 06 – DNS reload
+if (( DO_DNSRELOAD == 1 )); then
+  run_step 06 "🔁" "Reload DNS (reloaddns)" "pihole reloaddns"
+else
+  echo -e "${YELLOW}DNS-Reload übersprungen (--no-dnsreload).${NC}"
+fi
 
-# --------------------------- DNS reload & health ----------------------------
-run_step 07 "🔁" "Reload DNS (reloaddns)" "pihole reloaddns"
+# 07 – Health: Port 53 & basic dig
+run_step 07 "🧪" "Health: Port 53 listeners" $'ss -lntup | awk '/\:53\s/ {print}' || true' false true
+run_step 08 "🌐" "DNS Test: google.com @127.0.0.1" $'dig +time=2 +tries=1 +short google.com @127.0.0.1 || true' false true
+run_step 09 "🏠" "DNS Test: pi.hole @127.0.0.1" $'dig +time=2 +tries=1 +short pi.hole @127.0.0.1 || true' false true
 
-run_step 08 "🧪" "Health: port 53 listeners" $'\
-  ss -lntup | awk \''/\:53\s/ {print}'\'' || true' true true
+# 10 – GitHub Reachability (häufiges Problem bei Updates/Wget)
+run_step 10 "🐙" "GitHub Reachability" $'\
+  dig +time=2 +tries=1 +short raw.githubusercontent.com @127.0.0.1 || true; \
+  echo "curl -I https://raw.githubusercontent.com (IPv4)"; \
+  curl -4 -sI https://raw.githubusercontent.com | head -n 1 || true' false true
 
-run_step 09 "🌐" "DNS test with dig (google.com)" $'\
-  dig +short google.com @127.0.0.1 || true' false true
+# 11 – Tailscale (nur anzeigen, falls vorhanden)
+if command -v tailscale >/dev/null 2>&1; then
+  run_step 11 "🧩" "Tailscale Status (Kurz)" $'\
+    echo -n "TS IPv4: "; tailscale ip -4 2>/dev/null || true; \
+    echo -n "TS IPv6: "; tailscale ip -6 2>/dev/null || true; \
+    tailscale status --peers=false 2>/dev/null || tailscale status 2>/dev/null || true' false true
+fi
 
-# --------------------------- Diagnostics (top) ------------------------------
+# 12 – FTL Toplists (falls DB da)
 if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$FTL_DB" ]]; then
-  run_step 10 "📈" "Top 5 Domains (FTL)" $'\
+  run_step 12 "📈" "Top 5 Domains (FTL)" $'\
     sqlite3 -readonly "$FTL_DB" "SELECT domain, COUNT(1) c FROM queries GROUP BY domain ORDER BY c DESC LIMIT 5;" || true' false true
-  run_step 11 "👥" "Top 5 Clients (FTL)" $'\
+  run_step 13 "👥" "Top 5 Clients (FTL)" $'\
     sqlite3 -readonly "$FTL_DB" "SELECT client, COUNT(1) c FROM queries GROUP BY client ORDER BY c DESC LIMIT 5;" || true' false true
 else
   echo -e "${YELLOW}sqlite3 oder FTL DB nicht gefunden – Überspringe Top-Listen.${NC}"
 fi
 
-# --------------------------- Summary ---------------------------------------
+# 14 – Abschluss
 summary
 
 echo -e "${GREEN}Done.${NC}"
