@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Pi-hole v6.x - Full Maintenance PRO MAX (v5.1.1)
-# Version 5.1.1 - 2025-09-16
+# Pi-hole v6.x - Full Maintenance PRO MAX (v5.1.2)
+# Version 5.1.2 - 2025-09-16
 # By Tim & ChatGPT ^=^z^
 #
-# Fixes for: avoid spinner/monitor contaminating step logs,
-# strip ANSI color codes from per-step logs shown in-report,
-# print spinner output to tty only, improved header box.
+# Fixes:
+# - Improve backup step to avoid hangs (use tar directly into /var/backups, exclude WAL/SHM/sockets)
+# - Print clear progress messages during backup so you see what is currently executed
+# - Spinner: fix spin_chars quoting and ensure spinner writes only to TTY
+# - Small logging/robustness tweaks
 #
 set -euo pipefail
 IFS=$'\n\t'
@@ -75,7 +77,7 @@ exec > >(tee -a "$LOGFILE") 2>&1
 print_header() {
     clear
     echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.1.1${MAGENTA})  ║${NC}"
+    echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.1.2${MAGENTA})  ║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
     # Zeige Pi-hole Version falls vorhanden
     if command -v pihole >/dev/null 2>&1; then
@@ -91,7 +93,7 @@ print_header() {
 spinner() {
     local pid=$1
     local prefix="${2:-}"
-    local spin_chars='|/-\'
+    local spin_chars="|/-\\"
     local i=0
     # If we have a TTY, write spinner there to avoid polluting logs
     local out="/dev/tty"
@@ -100,6 +102,7 @@ spinner() {
     fi
     while kill -0 "$pid" 2>/dev/null; do
         i=$(( (i+1) %4 ))
+        # Print prefix + state + spinner char
         printf "\r${prefix} %s %s" "${CYAN}running${NC}" "${spin_chars:i:1}" >"$out" 2>/dev/null || true
         sleep 0.15
     done
@@ -166,7 +169,7 @@ run_step() {
             if [ -f "$step_log" ]; then
                 last_line="$(tail -n 1 "$step_log" 2>/dev/null || true)"
                 # strip any stray ANSI sequences (should already be stripped) and limit length
-                last_line_clean="$(printf "%s" "$last_line" | sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | cut -c1-60)"
+                last_line_clean="$(printf "%s" "$last_line" | sed -r $'s/\\x1B\\[[0-9;]*[a-zA-Z]//g' | cut -c1-80)"
                 printf "\r${CYAN}%s${NC} %s" "${last_line_clean}" "${BLUE}[PID:${pid}]${NC}" >"$out" 2>/dev/null || true
             else
                 printf "\r${BLUE}[PID:${pid}] ${CYAN}running...${NC}" >"$out" 2>/dev/null || true
@@ -241,24 +244,20 @@ run_step "04" "🆙" "Pi-hole self-update" \
 run_step "05" "📋" "Update Gravity / Blocklists" \
     "pihole -g"
 
-# Backup: verbessertes Backup mit sqlite3 fallback & komplettes Verzeichnis als tar.gz
+# Backup: improved backup sequence (no hanging, clear progress messages)
 run_step "06" "💾" "Backup Pi-hole configuration (gravity + pihole dir)" \
-    "backup_dir=\"/etc/pihole/backup_v6_$(date +%Y-%m-%d_%H-%M-%S)\"; \
+    "backup_dir=\"/var/backups/pihole_backup_$(date +%Y-%m-%d_%H-%M-%S)\"; \
      mkdir -p \"\$backup_dir\"; \
-     if [ -w \"\$backup_dir\" ] || [ -w \"/etc/pihole\" ]; then \
-         echo 'Backing up /etc/pihole to' \"\$backup_dir\"; \
-         cp -a /etc/pihole/* \"\$backup_dir\" 2>/dev/null || true; \
-         if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$GRAVITY_DB\" ]; then \
-             sqlite3 \"$GRAVITY_DB\" \".dump adlist\" > \"\$backup_dir/adlist.sql\" 2>/dev/null || true; \
-         fi; \
-         if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$FTL_DB\" ]; then \
-             sqlite3 \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\" 2>/dev/null || true; \
-         fi; \
-         tar -czf \"/var/backups/pihole_backup_$(date +%Y-%m-%d_%H-%M-%S).tar.gz\" -C \"\$backup_dir\" . && echo \"Tar saved to /var/backups\" || echo 'Tar failed'; \
-         echo \"Backup saved to: \$backup_dir\"; \
-     else \
-         echo 'No write permission to backup directory'; \
-     fi"
+     echo 'Backup directory:' \"\$backup_dir\"; \
+     echo '1) Creating tarball of /etc/pihole (excluding WAL/SHM/sockets)...'; \
+     tar -C /etc -czf \"\$backup_dir/pihole_backup.tar.gz\" --warning=no-file-changed --exclude='pihole-FTL.db-wal' --exclude='pihole-FTL.db-shm' --exclude='*.sock' pihole || { echo 'Tar archive failed' >&2; exit 2; }; \
+     echo 'Tarball created: ' \"\$backup_dir/pihole_backup.tar.gz\"; \
+     echo '2) Exporting gravity adlist (if sqlite3 & gravity.db available)...'; \
+     if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$GRAVITY_DB\" ]; then sqlite3 \"$GRAVITY_DB\" \".dump adlist\" > \"\$backup_dir/adlist.sql\" 2>/dev/null || echo 'Gravity adlist dump failed'; else echo 'sqlite3 or gravity.db missing'; fi; \
+     echo '3) Exporting FTL schema (if sqlite3 & pihole-FTL.db available)...'; \
+     if command -v sqlite3 >/dev/null 2>&1 && [ -f \"$FTL_DB\" ]; then sqlite3 \"$FTL_DB\" \".schema\" > \"\$backup_dir/ftl_schema.sql\" 2>/dev/null || echo 'FTL schema dump failed'; else echo 'sqlite3 or ftl db missing'; fi; \
+     echo 'Backup completed successfully. Files in:' \"\$backup_dir\"; \
+     ls -lh \"\$backup_dir\" || true" true
 
 run_step "07" "🔄" "Reload Pi-hole DNS" \
     "pihole reloaddns"
