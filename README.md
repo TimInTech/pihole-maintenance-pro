@@ -44,11 +44,9 @@ sudo ./pihole_maintenance_pro.sh
 
 ---
 
-📁 Backups
 
 
 
-Backups will be skipped if write permissions are missing or if the backup directory cannot be created.
 
 
 ---

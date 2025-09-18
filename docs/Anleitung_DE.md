@@ -15,7 +15,6 @@ Dieses Skript dient der vollständigen Pflege und Wartung eines Pi-hole v6.x Sys
 
 ## 📁 Backup
 
-Backups werden jetzt schrittweise erstellt und landen in einem eigenen Verzeichnis:
 
 `/var/backups/pihole_backup_<timestamp>/`
 
