@@ -12,7 +12,6 @@ Kein Unbound vorausgesetzt. PADD kompatibel.
 - Log-Datei: `/var/log/pihole_maintenance_pro_<timestamp>.log`
 
 ## Installation
-
 **Variante A: Installer**
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
@@ -27,7 +26,6 @@ sudo install -m 0755 pihole_maintenance_pro.sh /usr/local/bin/pihole_maintenance
 ```
 
 ## Nutzung
-
 **Interaktiv**
 ```bash
 sudo /usr/local/bin/pihole_maintenance_pro.sh
@@ -44,7 +42,6 @@ sudo /usr/local/bin/pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity
 ```
 
 ## Troubleshooting (praxisbewährt)
-
 1) **rfkill-Hinweis**
 ```bash
 sudo raspi-config nonint do_wifi_country DE
