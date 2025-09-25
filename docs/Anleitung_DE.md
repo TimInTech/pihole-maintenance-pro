@@ -1,43 +1,17 @@
-# 🇩🇪 Anleitung: Pi-hole Maintenance PRO MAX (v5.1.2)
+# Anleitung DE – Pi-hole Maintenance PRO MAX (v5.3.1)
 
-Dieses Skript dient der vollständigen Pflege und Wartung eines Pi-hole v6.x Systems auf einem Raspberry Pi. Es bietet farbige Ausgabe, detailliertes Logging und eine strukturierte Schritt-für-Schritt-Ausführung.
+Nutzung:
+  sudo /usr/local/bin/pihole_maintenance_pro.sh
+  sudo /usr/local/bin/pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
 
-## 🧰 Funktionen
+Installation:
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
 
-- Systemupdate via `apt` inklusive Autoclean/Autoremove
-- Pi-hole Core Update & Gravity Aktualisierung
-- DNS neu laden
-- Healthchecks (Ping, dig, Port 53, FTL)
-- Statistiken zu Top-Domains und -Clients
-- Ressourcen- und Temperaturanzeige des Raspberry Pi
+Cron:
+  0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
 
-- Logging aller Schritte in `/var/log/`
-
-## 📁 Backup
-
-
-`/var/backups/pihole_backup_<timestamp>/`
-
-Enthalten sind:
-
-- `pihole_backup.tar.gz` – komprimierter Snapshot von `/etc/pihole`
-
-
-## 🔧 Ausführung
-
-```bash
-bash ~/pihole_maintenance_pro.sh
-```
-
-## 🔁 Automatisch via Cronjob
-
-```cron
-0 4 * * 0 bash /home/pi/pihole_maintenance_pro.sh
-```
-
-## 📝 Logfile
-
-Wird automatisch mit Zeitstempel erstellt:
-`/var/log/pihole_maintenance_pro_YYYY-MM-DD_HH-MM-SS.log`
-
-Letzte Prüfung: 2025-08-04
+Troubleshooting kurz:
+- rfkill → do_wifi_country DE; optional rfkill block wifi
+- sqlite3 → apt install sqlite3
+- FTL-DB Rechte → sudo sqlite3 -readonly /etc/pihole/pihole-FTL.db "SELECT COUNT(*) FROM queries;"
+- Locale → locale-gen; update-locale LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8
