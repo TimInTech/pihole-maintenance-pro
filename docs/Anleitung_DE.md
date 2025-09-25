@@ -1,15 +1,14 @@
-# 🇩🇪 Anleitung: Pi-hole Maintenance PRO MAX (v5.1.2)
+# Anleitung (DE): Pi-hole Maintenance PRO MAX (v5.3.1)
 
-Dieses Skript dient der vollständigen Pflege und Wartung eines Pi-hole v6.x Systems auf einem Raspberry Pi. Es bietet farbige Ausgabe, detailliertes Logging und eine strukturierte Schritt-für-Schritt-Ausführung.
+## Nutzung
+  sudo /usr/local/bin/pihole_maintenance_pro.sh
+  sudo /usr/local/bin/pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
 
-## 🧰 Funktionen
+## Installation
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
 
-- Systemupdate via `apt` inklusive Autoclean/Autoremove
-- Pi-hole Core Update & Gravity Aktualisierung
-- DNS neu laden
-- Healthchecks (Ping, dig, Port 53, FTL)
-- Statistiken zu Top-Domains und -Clients
-- Ressourcen- und Temperaturanzeige des Raspberry Pi
+## Cron
+  0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
 
 - Logging aller Schritte in `/var/log/`
 
