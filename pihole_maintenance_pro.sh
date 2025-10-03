@@ -53,10 +53,19 @@ done
 
 # --------------------------- Paths & globals --------------------------------
 TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
-LOGFILE="/var/log/pihole_maintenance_pro_$(date +%Y-%m-%d_%H-%M-%S).log"
-trap 'rm -rf "$TMPDIR"; [[ -t 1 ]] && echo -e "${YELLOW}Temporary logs removed: $TMPDIR${NC}" || true' EXIT
+# Prefer /var/log but fallback to $TMPDIR if not writable (avoid silent failures)
+LOGDIR="/var/log"
+if [[ -d "$LOGDIR" && -w "$LOGDIR" ]]; then
+  LOGFILE="$LOGDIR/pihole_maintenance_pro_$(date +%Y-%m-%d_%H-%M-%S).log"
+else
+  LOGFILE="$TMPDIR/pihole_maintenance_pro_$(date +%Y-%m-%d_%H-%M-%S).log"
+  echo -e "${YELLOW}Hinweis:${NC} /var/log nicht verfügbar oder nicht beschreibbar, Log wird nach $TMPDIR geschrieben."
+fi
 
-# All stdout/stderr to logfile AND console
+# Minimal cleanup trap until a fuller trap (with summary) is set later
+trap 'rm -rf "$TMPDIR" 2>/dev/null || true' EXIT
+
+# All stdout/stderr to logfile AND console (tee may fail if LOGFILE dir missing; handled above)
 exec > >(tee -a "$LOGFILE") 2>&1
 
 declare -A STATUS        # step -> status
@@ -88,8 +97,16 @@ run_step() {
   echo -e "${BLUE}║ ${icon} ${title}${NC}"
   echo -en "${BLUE}╚═>${NC} "
 
+  # determine output device for live display (safe if no TTY)
+  local out="/dev/null"
+  if [[ -t 1 ]]; then
+    # /dev/tty may not be writable in some containerized environments; fallback to stdout
+    if [[ -w /dev/tty ]]; then out="/dev/tty"; else out="/dev/stdout"; fi
+  fi
+
   if [[ "$display_only" == "true" ]]; then
-    if bash -lc "$cmd" 2>&1 | tee /dev/tty | strip_ansi >"$step_log"; then
+    # show live output when possible, but always capture to step_log (no ANSI sequences)
+    if bash -lc "$cmd" 2>&1 | tee -a "$out" | strip_ansi >"$step_log"; then
       echo -e "${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"
     else
       echo -e "${WARN} Warning"; STATUS["$n"]="${YELLOW}⚠ WARN${NC}"; [[ -s "$step_log" ]] && tail -n 20 "$step_log"
@@ -97,15 +114,21 @@ run_step() {
     fi; return 0
   fi
 
+  # backgrounded execution with spinner and last-line preview
   bash -lc "$cmd" 2>&1 | strip_ansi >"$step_log" &
   local pid=$!
 
   (
-    local out="/dev/tty"; [[ ! -t 1 || ! -w $out ]] && out="/dev/null"
-    local spin='⠋⠙⠸⠴⠦⠇'; local i=0
+    # Spinner als Array (sicher mit Multibyte‑Glyphen)
+    local spin_chars=( '⠋' '⠙' '⠸' '⠴' '⠦' '⠇' )
+    local i=0
     while kill -0 "$pid" 2>/dev/null; do
-      local last=""; [[ -f "$step_log" ]] && last="$(tail -n1 "$step_log" | cut -c1-80)"
-      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "${last}" "$NC" "$BLUE" "$pid" "$NC" "${spin:i++%${#spin}:1}" >"$out" 2>/dev/null || true
+      local last="" ch idx
+      [[ -f "$step_log" ]] && last="$(tail -n1 "$step_log" | cut -c1-80)"
+      idx=$(( i % ${#spin_chars[@]} ))
+      ch="${spin_chars[$idx]}"
+      i=$(( i + 1 ))
+      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "${last}" "$NC" "$BLUE" "$pid" "$NC" "$ch" >"$out" 2>/dev/null || true
       sleep 0.25
     done
     printf '\r' >"$out" 2>/dev/null || true
@@ -136,6 +159,9 @@ FTL_DB=""; for c in \
   "/var/lib/pihole/pihole-FTL.db"; do [[ -f "$c" ]] && FTL_DB="$c" && break; done
 GRAVITY_DB="/etc/pihole/gravity.db"
 
+# Install a final trap that shows summary and cleans TMPDIR (overrides earlier simple trap)
+trap 'rc=$?; echo ""; summary 2>/dev/null || true; rm -rf "$TMPDIR" 2>/dev/null || true; [[ $rc -ne 0 ]] && echo -e "${RED}Script ended with exit code $rc${NC}"; exit $rc' EXIT
+
 # --------------------------- Run -------------------------------------------
 echo_hdr
 
@@ -150,6 +176,8 @@ run_step 00 "🧭" "Kontext: Host & Netz" $'\
 
 # 01 – APT update/upgrade/autoclean (optional)
 if (( DO_APT == 1 )); then
+  # run apt non-interactive to avoid prompts on unattended systems
+  export DEBIAN_FRONTEND=noninteractive
   run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
   run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
   if dpkg --print-architecture | grep -q '^armhf$'; then
@@ -184,7 +212,7 @@ else
 fi
 
 # 07 – Health: Port 53 & basic dig
-run_step 07 "🧪" "Health: Port 53 listeners" $'ss -lntup | awk '/\:53\s/ {print}' || true' false true
+run_step 07 "🧪" "Health: Port 53 listeners" "ss -lntup | awk '/:53[[:space:]]/ {print}' || true" false true
 run_step 08 "🌐" "DNS Test: google.com @127.0.0.1" $'dig +time=2 +tries=1 +short google.com @127.0.0.1 || true' false true
 run_step 09 "🏠" "DNS Test: pi.hole @127.0.0.1" $'dig +time=2 +tries=1 +short pi.hole @127.0.0.1 || true' false true
 
@@ -216,3 +244,94 @@ fi
 summary
 
 echo -e "${GREEN}Done.${NC}"
+
+# Nutz: scripts/test-repo.sh
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
+cd "$REPO_ROOT"
+
+fail() { echo "FEHLER: $*" >&2; exit 1; }
+
+echo "1) Alle Shell‑Skripte: Syntax‑Check (bash -n)"
+find . -type f -name '*.sh' -print0 | while IFS= read -r -d '' f; do
+  printf "  %-60s " "$f"
+  if bash -n "$f"; then echo "ok"; else echo "SYNTAX ERROR in $f" && exit 2; fi
+done
+
+echo
+echo "2) ShellCheck (wenn installiert)"
+if command -v shellcheck >/dev/null 2>&1; then
+  find . -type f -name '*.sh' -print0 | xargs -0 shellcheck -x || true
+else
+  echo "  shellcheck nicht gefunden — übersprungen"
+fi
+
+echo
+echo "3) shfmt style check (optional)"
+if command -v shfmt >/dev/null 2>&1; then
+  find . -type f -name '*.sh' -print0 | xargs -0 shfmt -d || true
+else
+  echo "  shfmt nicht gefunden — übersprungen"
+fi
+
+echo
+echo "4) Testlauf des Hauptscripts im Safe‑Modus (keine apt/upgrades/gravity/reload)"
+MAIN="./pihole_maintenance_pro.sh"
+if [[ ! -f "$MAIN" ]]; then fail "Hauptscript $MAIN nicht gefunden"; fi
+
+OUT_TMP="$(mktemp -t pihole_test_out_XXXX)"
+echo "  Ausführen: sudo bash $MAIN --no-apt --no-upgrade --no-gravity --no-dnsreload"
+# Script benötigt Root; dieser Aufruf ist nicht-destruktiv (Flags verhindern Änderungen)
+sudo bash "$MAIN" --no-apt --no-upgrade --no-gravity --no-dnsreload 2>&1 | tee "$OUT_TMP"
+RC=$?
+if [[ $RC -ne 0 ]]; then
+  echo "  Hauptscript lieferte Exitcode $RC — zeige letzte Ausgabe:"
+  tail -n 200 "$OUT_TMP"
+  exit $RC
+fi
+
+echo
+echo "5) Log‑Assertions (aus Ausgabe entnehmen + Datei prüfen)"
+# ANSI entfernen und nach "Log:" suchen
+OUT_STRIPPED="$(mktemp -t pihole_test_out_stripped_XXXX)"
+sed -r $'s/\x1B\\[[0-9;]*[a-zA-Z]//g' "$OUT_TMP" > "$OUT_STRIPPED"
+
+LOGPATH="$(awk -F'Log: ' '/Log:/ {print $2; exit}' "$OUT_STRIPPED" | tr -d '[:space:]')"
+if [[ -z "$LOGPATH" ]]; then
+  echo "  WARN: Keine Log‑Datei in Ausgabe gefunden. Ausgabe (letzte 100 Zeilen):"
+  tail -n 100 "$OUT_STRIPPED"
+  rm -f "$OUT_TMP" "$OUT_STRIPPED"
+  fail "Log‑Pfad nicht ermittelt"
+fi
+echo "  Gefundene Logdatei: $LOGPATH"
+if [[ ! -f "$LOGPATH" ]]; then
+  # manchmal wird ins TMP geschrieben; berichten und zeigen Auszug
+  echo "  Logdatei $LOGPATH existiert nicht; Ausgabe zeigen (letzte 80 Zeilen):"
+  tail -n 80 "$OUT_STRIPPED"
+  rm -f "$OUT_TMP" "$OUT_STRIPPED"
+  fail "Logdatei $LOGPATH nicht vorhanden"
+fi
+
+# Prüfe Inhalt der Logdatei (ANSI entfernen für Prüfungen)
+LOG_STRIPPED="$(mktemp -t pihole_test_log_stripped_XXXX)"
+sed -r $'s/\x1B\\[[0-9;]*[a-zA-Z]//g' "$LOGPATH" > "$LOG_STRIPPED"
+
+# Erwartete Schlüsselworte/Titel
+grep -q "PI-HOLE MAINTENANCE PRO MAX" "$LOG_STRIPPED" || fail "Header fehlt in Log"
+grep -q "Kontext: Host & Netz" "$LOG_STRIPPED" || echo "  WARN: Kontext‑Block nicht gefunden im Log"
+grep -q "Pi-hole Version" "$LOG_STRIPPED" || echo "  WARN: Pi-hole Version nicht gefunden im Log"
+grep -q "Gravity" "$LOG_STRIPPED" || echo "  WARN: Gravity‑Block nicht gefunden"
+grep -q "Done\\." "$LOG_STRIPPED" || fail "Done. nicht in Log gefunden"
+
+# Summary‑Checks: prüfe, dass mindestens ein Step‑Status ausgegeben wurde
+if ! grep -qE '^ *#?[0-9]{2} .*OK|OK|FAIL|WARN|✖|✔' "$OUT_STRIPPED"; then
+  echo "  WARN: Keine Step‑Summary in der Ausgabe gefunden. Ausgabe (letzte 120 Zeilen):"
+  tail -n 120 "$OUT_STRIPPED"
+fi
+
+echo
+echo "6) Ergebnis: Alles geprüft — Keinen kritischen Fehler gefunden"
+# Aufräumen
+rm -f "$OUT_TMP" "$OUT_STRIPPED" "$LOG_STRIPPED"
+exit 0
