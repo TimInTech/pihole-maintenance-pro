@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -32,15 +30,4 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request.number;
-            const { data } = await github.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pr });
-            if (data.mergeable_state === 'clean') {
-              await github.pulls.merge({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: pr,
-                merge_method: 'squash'
-              });
-              core.info(`Merged PR #${pr}`);
-            } else {
-              core.info(`mergeable_state=${data.mergeable_state}; skipping`);
             }
