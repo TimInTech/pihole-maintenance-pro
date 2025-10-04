@@ -1,18 +1,10 @@
-name: yaml-automerge-pilot
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   enable-automerge:
     runs-on: ubuntu-latest
     if: startsWith(github.head_ref, 'copilot/')
     steps:
-      - name: Checkout repository        uses: actions/checkout@v4        with: { fetch-depth: 0 }
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -24,18 +16,9 @@ jobs:
     needs: enable-automerge
     if: startsWith(github.head_ref, 'copilot/')
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - uses: actions/github-script@v7
         with:
           script: |
             const pr = context.payload.pull_request.number;
-            const { data } = await github.pulls.get({
-              owner: context.repo.owner, repo: context.repo.repo, pull_number: pr
-            });
-            core.info(`mergeable_state=${data.mergeable_state}`);
-            if (data.mergeable_state === 'clean') {
-              await github.pulls.merge({
-                owner: context.repo.owner, repo: context.repo.repo,
-                pull_number: pr, merge_method: 'squash'
-              });
-              core.info(`Merged PR #${pr}`);
-            }
