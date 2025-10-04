@@ -1,28 +1,42 @@
-# Pi-hole Maintenance PRO MAX (v5.3.1)
+<div align="center">
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
+# 🛰️ Pi-hole Maintenance PRO MAX
+**Automated Pi-hole v6 Maintenance Script**
 
-**🇩🇪 [Deutsche Version](README.de.md) | 🇬🇧 English Version**
+[![Build](https://img.shields.io/github/actions/workflow/status/TimInTech/pihole-maintenance-pro/ci-sanity.yml?branch=main)](https://github.com/TimInTech/pihole-maintenance-pro/actions)
+[![License](https://img.shields.io/github/license/TimInTech/pihole-maintenance-pro)](LICENSE)
 
-Wartungsskript für **Pi-hole 6.x** auf Raspberry Pi OS (Bookworm). Schritte mit Logging nach `/var/log/`.  
-Kein Unbound vorausgesetzt. PADD kompatibel.
+<img src="https://skillicons.dev/icons?i=bash,linux" alt="Tech" />
+
+**Languages:** 🇬🇧 English (this file) • [🇩🇪 Deutsch](README.de.md)
+
+</div>
+
+---
+
+## What & Why
+
+Automated Pi-hole v6 maintenance script for Raspberry Pi OS (Bookworm) with comprehensive logging and health monitoring.
 
 ## Features
-- APT Update/Upgrade/Autoremove/Autoclean
-- Pi-hole Update (`pihole -up`), Gravity (`pihole -g`), `reloaddns`
-- Healthchecks: Port 53, `dig`-Tests, GitHub-Reachability
-- Optional: Tailscale-Status
-- FTL-Toplisten via `sqlite3` (wenn vorhanden)
-- Log-Datei: `/var/log/pihole_maintenance_pro_<timestamp>.log`
 
-## Installation
-**Variante A: Installer**
+- APT Update/Upgrade/Autoremove/Autoclean
+- Pi-hole Update (`pihole -up`), Gravity (`pihole -g`), `reloaddns`  
+- Healthchecks: Port 53, `dig`-Tests, GitHub-Reachability
+- Optional: Tailscale-Status (if available)
+- FTL-Toplisten via `sqlite3` (if available)
+- Log files: `/var/log/pihole_maintenance_pro_<timestamp>.log`
+
+## Quickstart
+
+**Installer (from main branch):**
+
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
 ```
 
-**Variante B: Manuell**
+**Manual Installation:**
+
 ```bash
 cd ~
 wget -O pihole_maintenance_pro.sh https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/pihole_maintenance_pro.sh
@@ -30,79 +44,113 @@ chmod +x pihole_maintenance_pro.sh
 sudo install -m 0755 pihole_maintenance_pro.sh /usr/local/bin/pihole_maintenance_pro.sh
 ```
 
-## Nutzung
-**Interaktiv**
+**Interactive Usage:**
+
 ```bash
 sudo /usr/local/bin/pihole_maintenance_pro.sh
 ```
 
-**Beispiele (Flags)**
+**Usage with Flags:**
+
 ```bash
 sudo /usr/local/bin/pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
 ```
 
-**Cron (So 04:00)**
+**Cron Example (Sunday 04:00):**
+
 ```cron
 0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
 ```
 
-## Troubleshooting (praxisbewährt)
-1) **rfkill-Hinweis**
-```bash
-sudo raspi-config nonint do_wifi_country DE
-sudo rfkill block wifi   # optional
-```
+## Configuration/Flags
 
-2) **sqlite3 fehlt / Toplisten übersprungen**
-```bash
-sudo apt update && sudo apt install -y sqlite3
-ls -lh /etc/pihole/pihole-FTL.db
-```
+- `--no-apt`: Skip APT package management
+- `--no-upgrade`: Skip Pi-hole upgrade check
+- `--no-gravity`: Skip gravity update
+- `--no-dnsreload`: Skip DNS reload
 
-3) **FTL-DB „unable to open … pihole-FTL.db“**
-```bash
-# als root lesen
-sudo sqlite3 -readonly /etc/pihole/pihole-FTL.db "SELECT COUNT(*) FROM queries;"
-# oder Benutzer zur Gruppe pihole
-sudo usermod -aG pihole $USER
-newgrp pihole
-```
+## Healthchecks
 
-4) **Locale-Warnungen bei APT**
-```bash
-echo -e "en_GB.UTF-8 UTF-8\nde_DE.UTF-8 UTF-8" | sudo tee /etc/locale.gen >/dev/null
-sudo locale-gen
-sudo update-locale LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8
-```
+- Port 53 connectivity test
+- DNS resolution tests via `dig`
+- GitHub reachability check
+- Optional Tailscale status monitoring
 
-5) **Hinweis `linux-image-rpi-v8` auf Pi 3B (ARMv7)**
-> Ignorierbar. Paket wird nicht installiert.
+## Troubleshooting
 
-6) **GitHub-Reachability**
-> Netzwerk/DNS prüfen und erneut ausführen.
+1. **rfkill-Hinweis / Wi-Fi Country Code:**
 
-7) **Installer 404 (Altzustände)**
-```bash
-chmod +x ~/pihole_maintenance_pro.sh
-sudo install -m 0755 ~/pihole_maintenance_pro.sh /usr/local/bin/pihole_maintenance_pro.sh
-```
+   ```bash
+   sudo raspi-config nonint do_wifi_country DE
+   sudo rfkill block wifi   # optional
+   ```
 
-8) **Top-Domains on-demand**
-```bash
-sudo sqlite3 -readonly /etc/pihole/pihole-FTL.db \
-"SELECT domain, COUNT(*) AS hits FROM queries GROUP BY domain ORDER BY hits DESC LIMIT 10;"
-```
+2. **sqlite3 installation (for Top Lists):**
 
-## Skript-Hinweise (robust)
-- SQL nur, wenn `sqlite3` vorhanden **und** `/etc/pihole/pihole-FTL.db` lesbar.
-- rfkill-Meldungen vermeiden: Ländercode setzen, optional WLAN blockieren.
+   ```bash
+   sudo apt update && sudo apt install -y sqlite3
+   ls -lh /etc/pihole/pihole-FTL.db
+   ```
+
+3. **FTL Database Permission Issues:**
+
+   ```bash
+   # Read as root
+   sudo sqlite3 -readonly /etc/pihole/pihole-FTL.db "SELECT COUNT(*) FROM queries;"
+   # Or add user to pihole group
+   sudo usermod -aG pihole $USER
+   newgrp pihole
+   ```
+
+4. **Locale Warnings during APT operations:**
+
+   ```bash
+   echo -e "en_GB.UTF-8 UTF-8\nde_DE.UTF-8 UTF-8" | sudo tee /etc/locale.gen >/dev/null
+   sudo locale-gen
+   sudo update-locale LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8
+   ```
+
+5. **Note: `linux-image-rpi-v8` on Pi 3B (ARMv7):**
+   > Ignorable warning. Package will not be installed.
+
+6. **GitHub Reachability Issues:**
+   > Check network/DNS and retry execution.
+
+7. **Manual Installation (if installer fails):**
+
+   ```bash
+   chmod +x ~/pihole_maintenance_pro.sh
+   sudo install -m 0755 ~/pihole_maintenance_pro.sh /usr/local/bin/pihole_maintenance_pro.sh
+   ```
+
+8. **Top Domains on-demand:**
+
+   ```bash
+   sudo sqlite3 -readonly /etc/pihole/pihole-FTL.db \
+   "SELECT domain, COUNT(*) AS hits FROM queries GROUP BY domain ORDER BY hits DESC LIMIT 10;"
+   ```
+
+## Logs
+
+Log files are saved with timestamp pattern: `/var/log/pihole_maintenance_pro_<timestamp>.log`
+
+## Security/Disclaimer
+
+Use this script at your own risk. Always review scripts before execution and ensure you have proper backups.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
-**v5.3.1**
-- Neuer Installer (`scripts/install.sh`)
-- README/Anleitung: rfkill, sqlite3, FTL-DB-Rechte, Locale
-- Klarere Hinweise für Pi-hole 6.x
 
-_Disclaimer: Nutzung auf eigene Verantwortung._
+**Current Version: v5.3.1**
 
-<- Updated all documentation for new GitHub repository touch: 2025-10-04T15:28:04+02:00 -->
+- New installer (`scripts/install.sh`)
+- Updated documentation for Pi-hole 6.x compatibility
+- Enhanced troubleshooting guide for common issues
+- Improved logging and error handling
+
+---
+
+*Last updated: 2025-10-04*
