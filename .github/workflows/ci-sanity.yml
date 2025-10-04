@@ -1,0 +1,7 @@
+name: ci-sanity
+on: [push, pull_request]
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
