@@ -1,0 +1,27 @@
+name: ci-sanity
+on:
+  pull_request:
+  push:
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: YAML Lint (workflows)
+        run: |
+          python3 - <<'PY'
+import sys, yaml, glob
+bad = False
+for p in glob.glob(".github/workflows/*.yml"):
+    try:
+        yaml.safe_load(open(p))
+    except Exception as e:
+        print(f"Invalid YAML: {p}: {e}")
+        bad = True
+sys.exit(1 if bad else 0)
+PY
+      - name: Shellcheck (falls vorhanden)
+        run: |
+          sudo apt-get update -y >/dev/null
+          sudo apt-get install -y shellcheck >/dev/null
+          find . -type f -name "*.sh" -print0 | xargs -0 -r shellcheck -S style

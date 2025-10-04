@@ -99,3 +99,5 @@ sudo sqlite3 -readonly /etc/pihole/pihole-FTL.db \
 - Klarere Hinweise für Pi-hole 6.x
 
 _Disclaimer: Nutzung auf eigene Verantwortung._
+
+<- Updated all documentation for new GitHub repository touch: 2025-10-04T15:28:04+02:00 -->
