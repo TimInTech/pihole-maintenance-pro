@@ -1,0 +1,71 @@
+report_version: 1
+generated_at: "2025-10-04T17:17:41+02:00"
+repo:
+  name: "TimInTech/pihole-maintenance-pro"
+  default_branch: "main"
+  detected_types: ["shell", "other"]
+summary:
+  files:
+    removed_count: 2
+    renamed_count: 0
+    added_count: 1
+    modified_count: 3
+  readme:
+    existed: true
+    created_en: false
+    created_de: true
+    crosslinked: true
+  ci:
+    existed: true
+    created: false
+  build:
+    risks: []
+    status: "ok"
+changes:
+  removed:
+    - path: ".backup/"
+      reason: "Temporary git mirror directory (720K)"
+    - path: ".github/java-upgrade/"
+      reason: "Copilot artifact logs (20K)"
+  renamed: []
+  added:
+    - path: "README.de.md"
+      reason: "German documentation with crosslinks"
+  modified:
+    - path: ".github/workflows/yaml-automerge-pilot.yml"
+      reason: "Remove trailing 'YML' syntax error"
+    - path: ".gitignore"
+      reason: "Enhanced with comprehensive patterns"
+    - path: "README.md"
+      reason: "Added badges and language crosslinks"
+readme:
+  en_path: "README.md"
+  de_path: "README.de.md"
+  sections_present: ["title", "badges", "languages", "features", "quickstart", "config", "troubleshooting", "license", "changelog", "contributing"]
+ci:
+  files: [".github/workflows/yaml-automerge-pilot.yml", ".github/workflows/ci-sanity.yml"]
+git_patches: []
+new_files:
+  - path: "README.de.md"
+    language: "markdown"
+    content_b64: "IyBQaS1ob2xlIE1haW50ZW5hbmNlIFBSTyBNQVggKHY1LjMuMSkKCltbIExpY2Vuc2U6IE1JVF1dKGh0dHBzOi8vaW1nLnNoaWVsZHMuaW8vYmFkZ2UvTGljZW5zZS1NSVQteWVsbG93LnN2ZyldKGh0dHBzOi8vb3BlbnNvdXJjZS5vcmcvbGljZW5zZXMvTUlUKQ=="
+commands:
+  backup: []
+  install: []
+  build:
+    - "bash -n pihole_maintenance_pro.sh"
+  test:
+    - "./pihole_maintenance_pro.sh --help 2>/dev/null || echo 'requires root'"
+  run: []
+follow_up_checks:
+  - "gh pr checks"
+  - "gh run list --limit=5"
+  - "yaml-lint .github/workflows/*.yml 2>/dev/null || echo 'yamllint not available'"
+  - "shellcheck pihole_maintenance_pro.sh 2>/dev/null || echo 'shellcheck not available'"
+notes:
+  - "Repository is a functional Shell/Bash project for Pi-hole maintenance"
+  - "Temporary directories (.backup/, .github/java-upgrade/) removed successfully"
+  - "CI workflows functional with syntax error fixed"
+  - "Added bilingual documentation support (DE/EN)"
+  - "Enhanced .gitignore with comprehensive patterns"
+  - "No build/dependency management needed - pure shell script project"

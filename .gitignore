@@ -16,3 +16,18 @@ Thumbs.db
 
 # Backup/Temp directories
 .backup/
+.github/java-upgrade/
+
+# Build/Cache
+dist/
+build/
+__pycache__/
+*.pyc
+.cache/
+
+# IDE/OS
+.DS_Store
+Thumbs.db
+
+# Backup/Temp directories
+.backup/
