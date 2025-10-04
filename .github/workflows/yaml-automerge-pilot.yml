@@ -1,8 +1,7 @@
-name: yaml-automerge-pilot
-
+name: auto-merge-copilot
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -10,29 +9,30 @@ permissions:
 
 jobs:
   enable-automerge:
+    if: startsWith(github.head_ref || '', 'copilot/')
     runs-on: ubuntu-latest
-    if: startsWith(github.head_ref, 'copilot/')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          merge-method: squash
+          merge_method: squash
 
   merge-when-clean:
+    if: startsWith(github.head_ref || '', 'copilot/')
     runs-on: ubuntu-latest
-    needs: enable-automerge
-    if: startsWith(github.head_ref, 'copilot/')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // TODO: echte Prüfungen; derzeit nur Beispiel:
-            core.info('mergeability checks passed')
+            const pr = context.payload.pull_request
+            if (!pr) { return }
+            // mergeable_state: 'clean' => alle Checks grün, keine Konflikte
+            if (pr.mergeable_state === 'clean') {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'squash'
+              })
+            }
