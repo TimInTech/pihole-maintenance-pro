@@ -12,10 +12,12 @@ jobs:
     if: startsWith(github.head_ref, 'copilot/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
       - uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
           pull-request-number: ${{ github.event.pull_request.number }}
           merge-method: squash
 
@@ -42,3 +44,4 @@ jobs:
                 merge_method: 'squash'
               });
             }
+YML
