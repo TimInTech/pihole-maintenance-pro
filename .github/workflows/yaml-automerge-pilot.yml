@@ -44,4 +44,3 @@ jobs:
                 merge_method: 'squash'
               });
             }
-YML

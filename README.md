@@ -1,5 +1,10 @@
 # Pi-hole Maintenance PRO MAX (v5.3.1)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
+
+**🇩🇪 [Deutsche Version](README.de.md) | 🇬🇧 English Version**
+
 Wartungsskript für **Pi-hole 6.x** auf Raspberry Pi OS (Bookworm). Schritte mit Logging nach `/var/log/`.  
 Kein Unbound vorausgesetzt. PADD kompatibel.
 
