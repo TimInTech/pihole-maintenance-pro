@@ -12,9 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.head_ref, 'copilot/')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+      - name: Checkout repository        uses: actions/checkout@v4        with: { fetch-depth: 0 }
       - uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
