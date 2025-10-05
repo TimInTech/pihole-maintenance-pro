@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 # ============================================================================
 # Pi-hole v6.x – Full Maintenance PRO MAX  (NO-BACKUP EDITION)
-# Version: 5.3.0 (2025-09-17)
-# Authors: Tim & ChatGPT (TimInTech)
+# Version: 5.3.1 (2025-10-05)
+# Authors: TimInTech
 # ----------------------------------------------------------------------------
-# Changelog (vs 5.2.0)
+# Changelog v5.3.1 (2025-10-05) - Major Enhancement Release
+#  • NEW: Intelligent Summary mit echten Daten statt nur "OK"
+#  • NEW: Performance Dashboard (CPU Load, RAM, Disk, Temperatur)
+#  • NEW: Smart Data Collection (IP, DNS-Zeiten, FTL-Statistiken)
+#  • NEW: Intelligente Warnungen und automatische Empfehlungen
+#  • NEW: JSON Output Mode (--json) für Monitoring-Integration
+#  • NEW: 24h Query-Analytics aus FTL-Datenbank
+#  • Enhanced: Erweiterte Step-Reports mit kontextuellen Informationen
+#  • Enhanced: Robuste Datenextraktion und Performance-Bewertung
+#
+# Changelog v5.3.0 (vs 5.2.0)
 #  • Entfernt: kompletter Backup/FTL-Stop-Block (häufige Hänger → rausgenommen)
 #  • Neues, klares Step-Framework mit Spinner + Live-Output (TTY‑sicher)
 #  • Optional-Flags: --no-apt, --no-upgrade, --no-gravity, --no-dnsreload
@@ -31,13 +41,14 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 
 # --------------------------- Args ------------------------------------------
-DO_APT=1; DO_UPGRADE=1; DO_GRAVITY=1; DO_DNSRELOAD=1
+DO_APT=1; DO_UPGRADE=1; DO_GRAVITY=1; DO_DNSRELOAD=1; JSON_OUTPUT=0
 while (( "$#" )); do
   case "${1}" in
     --no-apt) DO_APT=0 ; shift ;;
     --no-upgrade) DO_UPGRADE=0 ; shift ;;
     --no-gravity) DO_GRAVITY=0 ; shift ;;
     --no-dnsreload) DO_DNSRELOAD=0 ; shift ;;
+    --json) JSON_OUTPUT=1 ; shift ;;
     -h|--help)
       cat <<EOF
 Usage: sudo ./pihole_maintenance_pro.sh [options]
@@ -45,6 +56,7 @@ Usage: sudo ./pihole_maintenance_pro.sh [options]
   --no-upgrade     Skip "pihole -up"
   --no-gravity     Skip "pihole -g"
   --no-dnsreload   Skip "pihole reloaddns"
+  --json           Output results in JSON format
 EOF
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -71,6 +83,10 @@ exec > >(tee -a "$LOGFILE") 2>&1
 declare -A STATUS        # step -> status
 declare -A STEP_LOGFILE  # step -> step logfile
 
+# Enhanced data collection for intelligent summary
+declare -A STEP_DATA
+declare -A PERFORMANCE_DATA
+
 # --------------------------- Utils -----------------------------------------
 strip_ansi() { sed -r $'s/\x1B\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'; }
 
@@ -80,7 +96,7 @@ echo_hdr() {
     clear
   fi
   echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.3.0${MAGENTA})  ║${NC}"
+  echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.3.1${MAGENTA})  ║${NC}"
   echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
   if command -v pihole >/dev/null 2>&1; then
     PH_VER="$(pihole -v 2>/dev/null || true)"
@@ -111,6 +127,8 @@ run_step() {
     # show live output when possible, but always capture to step_log (no ANSI sequences)
     if bash -lc "$cmd" 2>&1 | tee -a "$out" | strip_ansi >"$step_log"; then
       echo -e "${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"
+      # Collect data from successful display_only steps
+      [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
     else
       echo -e "${WARN} Warning"; STATUS["$n"]="${YELLOW}⚠ WARN${NC}"; [[ -s "$step_log" ]] && tail -n 20 "$step_log"
       [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler – Abbruch${NC}" && exit 1
@@ -139,20 +157,268 @@ run_step() {
 
   if wait "$pid"; then
     echo -e "\n${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"
+    # Collect data from successful steps
+    [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
   else
     local ec=$?; echo -e "\n${FAIL} Error (code: $ec)"; STATUS["$n"]="${RED}✖ FAIL${NC}"; [[ -f "$step_log" ]] && tail -n 50 "$step_log"
     [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler in Step ${n}${NC}" && exit $ec
   fi
 }
 
+# Performance data collection functions
+collect_system_info() {
+  PERFORMANCE_DATA[load]=$(uptime | awk -F'load average: ' '{print $2}' | cut -d',' -f1 | xargs)
+  PERFORMANCE_DATA[memory]=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}' 2>/dev/null || echo "N/A")
+  PERFORMANCE_DATA[disk]=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
+  [[ -f /sys/class/thermal/thermal_zone0/temp ]] && PERFORMANCE_DATA[temp]=$(($(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0)/1000)) || PERFORMANCE_DATA[temp]="N/A"
+}
+
+# Enhanced data extraction from step outputs
+extract_step_data() {
+  local step_num="$1" output="$2"
+  case "$step_num" in
+    00) # Network context
+      STEP_DATA[00_ip]=$(echo "$output" | grep -oE '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+    03) # Pi-hole version
+      STEP_DATA[03_version]=$(echo "$output" | grep "Core version" | awk '{print $4}')
+      ;;
+    07) # Port 53 listeners
+      STEP_DATA[07_listeners]=$(echo "$output" | wc -l)
+      ;;
+    08) # External DNS test
+      STEP_DATA[08_response]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+      ;;
+    09) # Local DNS test
+      STEP_DATA[09_response]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+      ;;
+    10) # GitHub reachability
+      STEP_DATA[10_github]=$(echo "$output" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+      ;;
+  esac
+}
+
+# Intelligent summary with real data
 summary() {
-  echo -e "\n${MAGENTA}════════ SUMMARY ════════${NC}"
-  # sort numeric by step
+  # Collect performance data
+  collect_system_info
+  
+  echo
+  echo -e "${CYAN}╔═══════════════ PERFORMANCE DASHBOARD ═══════════════╗${NC}"
+  printf "${CYAN}║${NC} 🚀 Load: %-8s 💾 RAM: %s%%    🌡️  Temp: %s°C    🗄️  Disk: %s%% ${CYAN}║${NC}\n" \
+    "${PERFORMANCE_DATA[load]:-"N/A"}" \
+    "${PERFORMANCE_DATA[memory]:-"N/A"}" \
+    "${PERFORMANCE_DATA[temp]:-"N/A"}" \
+    "${PERFORMANCE_DATA[disk]:-"N/A"}"
+  echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
+  
+  echo
+  echo -e "${MAGENTA}════════ INTELLIGENT SUMMARY ════════${NC}"
+  
+  # Enhanced step reporting with collected data
   for k in $(printf '%s\n' "${!STATUS[@]}" | sort -n); do
-    printf '  %-4s %b\n' "#${k}" "${STATUS[$k]}"
+    local status_icon="${STATUS[$k]}"
+    local step_info=""
+    
+    case "$k" in
+      00) step_info="🌍 Network    ${STEP_DATA[00_ip]:+"IP: ${STEP_DATA[00_ip]}"}" ;;
+      03) step_info="🛡️  Pi-hole    ${STEP_DATA[03_version]:+"v${STEP_DATA[03_version]}"}" ;;
+      07) step_info="🔍 Health     ${STEP_DATA[07_listeners]:+"${STEP_DATA[07_listeners]} listeners"}" ;;
+      08) step_info="🌐 DNS Ext    ${STEP_DATA[08_response]:+"${STEP_DATA[08_response]}"}" ;;
+      09) step_info="🏠 DNS Local  ${STEP_DATA[09_response]:+"${STEP_DATA[09_response]}"}" ;;
+      10) step_info="📡 GitHub     ${STEP_DATA[10_github]:+"${STEP_DATA[10_github]}"}" ;;
+      12) step_info="📊 FTL Query  $(get_query_summary)" ;;
+      13) step_info="👥 FTL Client $(get_client_summary)" ;;
+      *) step_info="$(get_step_description "$k")" ;;
+    esac
+    
+    printf '  %-4s %-50s %s\n' "#${k}" "$step_info" "$status_icon"
   done
+  
+  # Performance warnings
+  echo
+  show_recommendations
+  
   echo -e "Log: ${CYAN}$LOGFILE${NC}"
   echo -e "Step logs: ${CYAN}$TMPDIR${NC} (werden beim Exit gelöscht)"
+}
+
+# Get step descriptions for unmapped steps
+get_step_description() {
+  case "$1" in
+    01) echo "📦 APT Updates" ;;
+    04) echo "🆙 Pi-hole Update" ;;
+    05) echo "📋 Gravity Update" ;;
+    06) echo "🔁 DNS Reload" ;;
+    *) echo "Step $1" ;;
+  esac
+}
+
+# Extract query summary from FTL database
+get_query_summary() {
+  if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+    local total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s', 'now', '-24 hours');" 2>/dev/null || echo "0")
+    local blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s', 'now', '-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2>/dev/null || echo "0")
+    if [[ "$total_queries" -gt 0 ]]; then
+      local blocked_percent=$(( blocked_queries * 100 / total_queries ))
+      echo "24h: ${total_queries} queries, ${blocked_percent}% blocked"
+    else
+      echo "No recent data"
+    fi
+  else
+    echo "DB not available"
+  fi
+}
+
+# Extract client summary from FTL database  
+get_client_summary() {
+  if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+    local unique_clients=$(sqlite3 "$FTL_DB" "SELECT COUNT(DISTINCT client) FROM queries WHERE timestamp > strftime('%s', 'now', '-24 hours');" 2>/dev/null || echo "0")
+    echo "${unique_clients} active clients"
+  else
+    echo "DB not available"
+  fi
+}
+
+# Smart recommendations based on collected data
+show_recommendations() {
+  local warnings=()
+  local recommendations=()
+  
+  # Performance warnings
+  if [[ "${PERFORMANCE_DATA[memory]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[memory] > 85 )); then
+    warnings+=("⚠️  High memory usage: ${PERFORMANCE_DATA[memory]}%")
+    recommendations+=("💡 Consider restarting FTL service or increasing RAM")
+  fi
+  
+  if [[ "${PERFORMANCE_DATA[disk]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[disk] > 85 )); then
+    warnings+=("⚠️  Low disk space: ${PERFORMANCE_DATA[disk]}% used")
+    recommendations+=("💡 Consider log rotation or cleanup: pihole -f")
+  fi
+  
+  if [[ "${PERFORMANCE_DATA[temp]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[temp] > 70 )); then
+    warnings+=("🌡️  High temperature: ${PERFORMANCE_DATA[temp]}°C")
+    recommendations+=("💡 Check cooling and ventilation")
+  fi
+  
+  # Network warnings
+  if [[ "${STEP_DATA[07_listeners]}" =~ ^[0-9]+$ ]] && (( STEP_DATA[07_listeners] < 1 )); then
+    warnings+=("🔥 CRITICAL: No DNS listeners on port 53")
+    recommendations+=("🚨 Restart Pi-hole FTL: sudo systemctl restart pihole-FTL")
+  fi
+  
+  # Display warnings and recommendations
+  if (( ${#warnings[@]} > 0 )); then
+    echo -e "\n${YELLOW}════════ WARNINGS ════════${NC}"
+    printf '%s\n' "${warnings[@]}"
+  fi
+  
+  if (( ${#recommendations[@]} > 0 )); then
+    echo -e "\n${BLUE}════════ RECOMMENDATIONS ════════${NC}"
+    printf '%s\n' "${recommendations[@]}"
+  fi
+}
+
+# JSON output function for monitoring integration
+output_json() {
+  collect_system_info
+  
+  local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  local total_steps=${#STATUS[@]}
+  local successful_steps=0
+  local failed_steps=0
+  local warned_steps=0
+  
+  # Count step statuses
+  for status in "${STATUS[@]}"; do
+    if [[ "$status" == *"OK"* ]]; then
+      ((successful_steps++))
+    elif [[ "$status" == *"FAIL"* ]]; then
+      ((failed_steps++))
+    elif [[ "$status" == *"WARN"* ]]; then
+      ((warned_steps++))
+    fi
+  done
+  
+  # Determine overall status
+  local overall_status="healthy"
+  if (( failed_steps > 0 )); then
+    overall_status="critical"
+  elif (( warned_steps > 0 )); then
+    overall_status="warning"
+  fi
+  
+  # Extract query stats
+  local total_queries=0
+  local blocked_queries=0
+  local blocked_percentage=0
+  if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+    total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s', 'now', '-24 hours');" 2>/dev/null || echo "0")
+    blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s', 'now', '-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2>/dev/null || echo "0")
+    if [[ "$total_queries" -gt 0 ]]; then
+      blocked_percentage=$(awk "BEGIN {printf \"%.1f\", $blocked_queries/$total_queries*100}")
+    fi
+  fi
+  
+  # Build issues and recommendations arrays
+  local issues=()
+  local recommendations=()
+  
+  if [[ "${PERFORMANCE_DATA[memory]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[memory] > 85 )); then
+    issues+=("high_memory")
+    recommendations+=("restart_ftl")
+  fi
+  
+  if [[ "${PERFORMANCE_DATA[disk]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[disk] > 85 )); then
+    issues+=("low_disk_space")
+    recommendations+=("log_rotation")
+  fi
+  
+  if [[ "${STEP_DATA[07_listeners]}" =~ ^[0-9]+$ ]] && (( STEP_DATA[07_listeners] < 1 )); then
+    issues+=("no_dns_listeners")
+    recommendations+=("restart_pihole_ftl")
+  fi
+  
+  # Generate JSON output
+  cat <<EOF
+{
+  "timestamp": "$timestamp",
+  "status": "$overall_status",
+  "version": "5.3.1",
+  "summary": {
+    "total_steps": $total_steps,
+    "successful_steps": $successful_steps,
+    "failed_steps": $failed_steps,
+    "warned_steps": $warned_steps,
+    "total_queries_24h": $total_queries,
+    "blocked_queries_24h": $blocked_queries,
+    "blocked_percentage": $blocked_percentage,
+    "issues": [$(printf '"%s",' "${issues[@]}" | sed 's/,$//')]$( [[ ${#issues[@]} -gt 0 ]] && echo "," || echo "" )
+    "recommendations": [$(printf '"%s",' "${recommendations[@]}" | sed 's/,$//')]
+  },
+  "performance": {
+    "load_average": "${PERFORMANCE_DATA[load]:-"N/A"}",
+    "memory_usage_percent": ${PERFORMANCE_DATA[memory]:-0},
+    "disk_usage_percent": ${PERFORMANCE_DATA[disk]:-0},
+    "temperature_celsius": "${PERFORMANCE_DATA[temp]:-"N/A"}"
+  },
+  "network": {
+    "local_ip": "${STEP_DATA[00_ip]:-"N/A"}",
+    "dns_listeners": ${STEP_DATA[07_listeners]:-0},
+    "external_dns_response": "${STEP_DATA[08_response]:-"N/A"}",
+    "local_dns_response": "${STEP_DATA[09_response]:-"N/A"}",
+    "github_connectivity": "${STEP_DATA[10_github]:-"N/A"}"
+  },
+  "pihole": {
+    "version": "${STEP_DATA[03_version]:-"N/A"}",
+    "gravity_last_update": "$(stat -c %Y /etc/pihole/gravity.db 2>/dev/null || echo 0)"
+  },
+  "logs": {
+    "main_log": "$LOGFILE",
+    "step_logs": "$TMPDIR"
+  }
+}
+EOF
 }
 
 # Detect databases (best-effort)
@@ -244,7 +510,11 @@ else
 fi
 
 # 14 – Abschluss
-summary
+if [[ "$JSON_OUTPUT" == "1" ]]; then
+  output_json
+else
+  summary
+fi
 
 echo -e "${GREEN}Done.${NC}"
 
