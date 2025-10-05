@@ -75,7 +75,10 @@ declare -A STEP_LOGFILE  # step -> step logfile
 strip_ansi() { sed -r $'s/\x1B\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'; }
 
 echo_hdr() {
-  [[ -t 1 ]] && clear || true
+  # TTY-sicheres Clear (SC2015 vermeiden)
+  if [[ -t 1 ]]; then
+    clear
+  fi
   echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.3.0${MAGENTA})  ║${NC}"
   echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
@@ -245,93 +248,15 @@ summary
 
 echo -e "${GREEN}Done.${NC}"
 
-# Nutz: scripts/test-repo.sh
-set -euo pipefail
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
-
-cd "$REPO_ROOT"
-
-fail() { echo "FEHLER: $*" >&2; exit 1; }
-
-echo "1) Alle Shell‑Skripte: Syntax‑Check (bash -n)"
-find . -type f -name '*.sh' -print0 | while IFS= read -r -d '' f; do
-  printf "  %-60s " "$f"
-  if bash -n "$f"; then echo "ok"; else echo "SYNTAX ERROR in $f" && exit 2; fi
-done
-
-echo
-echo "2) ShellCheck (wenn installiert)"
-if command -v shellcheck >/dev/null 2>&1; then
-  find . -type f -name '*.sh' -print0 | xargs -0 shellcheck -x || true
-else
-  echo "  shellcheck nicht gefunden — übersprungen"
+# 🧪 Optionaler Repo-Selftest (nur bei RUN_SELFTEST=1)
+if [[ "${RUN_SELFTEST:-0}" == "1" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  TEST_SCRIPT="${SCRIPT_DIR}/scripts/test-repo.sh"
+  if [[ -f "$TEST_SCRIPT" ]]; then
+    echo "Führe Repository-Selftest aus..."
+    # Kein sudo, keine produktiven Pi-hole Calls im Dev-Kontext
+    bash "$TEST_SCRIPT" || echo "Selftest fehlgeschlagen"
+  else
+    echo "Selftest übersprungen (scripts/test-repo.sh nicht gefunden)"
+  fi
 fi
-
-echo
-echo "3) shfmt style check (optional)"
-if command -v shfmt >/dev/null 2>&1; then
-  find . -type f -name '*.sh' -print0 | xargs -0 shfmt -d || true
-else
-  echo "  shfmt nicht gefunden — übersprungen"
-fi
-
-echo
-echo "4) Testlauf des Hauptscripts im Safe‑Modus (keine apt/upgrades/gravity/reload)"
-MAIN="./pihole_maintenance_pro.sh"
-if [[ ! -f "$MAIN" ]]; then fail "Hauptscript $MAIN nicht gefunden"; fi
-
-OUT_TMP="$(mktemp -t pihole_test_out_XXXX)"
-echo "  Ausführen: sudo bash $MAIN --no-apt --no-upgrade --no-gravity --no-dnsreload"
-# Script benötigt Root; dieser Aufruf ist nicht-destruktiv (Flags verhindern Änderungen)
-sudo bash "$MAIN" --no-apt --no-upgrade --no-gravity --no-dnsreload 2>&1 | tee "$OUT_TMP"
-RC=$?
-if [[ $RC -ne 0 ]]; then
-  echo "  Hauptscript lieferte Exitcode $RC — zeige letzte Ausgabe:"
-  tail -n 200 "$OUT_TMP"
-  exit $RC
-fi
-
-echo
-echo "5) Log‑Assertions (aus Ausgabe entnehmen + Datei prüfen)"
-# ANSI entfernen und nach "Log:" suchen
-OUT_STRIPPED="$(mktemp -t pihole_test_out_stripped_XXXX)"
-sed -r $'s/\x1B\\[[0-9;]*[a-zA-Z]//g' "$OUT_TMP" > "$OUT_STRIPPED"
-
-LOGPATH="$(awk -F'Log: ' '/Log:/ {print $2; exit}' "$OUT_STRIPPED" | tr -d '[:space:]')"
-if [[ -z "$LOGPATH" ]]; then
-  echo "  WARN: Keine Log‑Datei in Ausgabe gefunden. Ausgabe (letzte 100 Zeilen):"
-  tail -n 100 "$OUT_STRIPPED"
-  rm -f "$OUT_TMP" "$OUT_STRIPPED"
-  fail "Log‑Pfad nicht ermittelt"
-fi
-echo "  Gefundene Logdatei: $LOGPATH"
-if [[ ! -f "$LOGPATH" ]]; then
-  # manchmal wird ins TMP geschrieben; berichten und zeigen Auszug
-  echo "  Logdatei $LOGPATH existiert nicht; Ausgabe zeigen (letzte 80 Zeilen):"
-  tail -n 80 "$OUT_STRIPPED"
-  rm -f "$OUT_TMP" "$OUT_STRIPPED"
-  fail "Logdatei $LOGPATH nicht vorhanden"
-fi
-
-# Prüfe Inhalt der Logdatei (ANSI entfernen für Prüfungen)
-LOG_STRIPPED="$(mktemp -t pihole_test_log_stripped_XXXX)"
-sed -r $'s/\x1B\\[[0-9;]*[a-zA-Z]//g' "$LOGPATH" > "$LOG_STRIPPED"
-
-# Erwartete Schlüsselworte/Titel
-grep -q "PI-HOLE MAINTENANCE PRO MAX" "$LOG_STRIPPED" || fail "Header fehlt in Log"
-grep -q "Kontext: Host & Netz" "$LOG_STRIPPED" || echo "  WARN: Kontext‑Block nicht gefunden im Log"
-grep -q "Pi-hole Version" "$LOG_STRIPPED" || echo "  WARN: Pi-hole Version nicht gefunden im Log"
-grep -q "Gravity" "$LOG_STRIPPED" || echo "  WARN: Gravity‑Block nicht gefunden"
-grep -q "Done\\." "$LOG_STRIPPED" || fail "Done. nicht in Log gefunden"
-
-# Summary‑Checks: prüfe, dass mindestens ein Step‑Status ausgegeben wurde
-if ! grep -qE '^ *#?[0-9]{2} .*OK|OK|FAIL|WARN|✖|✔' "$OUT_STRIPPED"; then
-  echo "  WARN: Keine Step‑Summary in der Ausgabe gefunden. Ausgabe (letzte 120 Zeilen):"
-  tail -n 120 "$OUT_STRIPPED"
-fi
-
-echo
-echo "6) Ergebnis: Alles geprüft — Keinen kritischen Fehler gefunden"
-# Aufräumen
-rm -f "$OUT_TMP" "$OUT_STRIPPED" "$LOG_STRIPPED"
-exit 0
