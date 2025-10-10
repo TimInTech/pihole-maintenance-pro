@@ -4,4 +4,31 @@ jobs:
   sanity:
     runs-on: ubuntu-latest
     steps:
-      - run: echo ok
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Install shfmt
+        run: |
+          ver=3.8.0
+          curl -sSL "https://github.com/mvdan/sh/releases/download/v${ver}/shfmt_v${ver}_linux_amd64" -o shfmt
+          sudo install -m 0755 shfmt /usr/local/bin/shfmt
+
+      - name: Lint & format (make check)
+        run: make check
+
+      - name: Fail if formatting changed files
+        run: |
+          git status --porcelain
+          git diff --exit-code || { echo "❌ shfmt changed files. Please run 'make fmt' locally and commit."; exit 1; }
+
+      - name: Script self-test (no side effects)
+        env:
+          RUN_SELFTEST: "1"
+        run: |
+          bash -n pihole_maintenance_pro.sh
+          ./pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
