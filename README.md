@@ -26,7 +26,7 @@ Automated Pi-hole v6 maintenance script for Raspberry Pi OS (Bookworm/Trixie) wi
 **Installer:**
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
-````
+```
 
 **Manual installation:**
 
@@ -56,7 +56,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
 ```
 
-> The script now auto-detects the `pihole` binary, but setting a full `PATH` in cron avoids distro-specific surprises.
+> Trixie/Cron uses reduced PATH. Script auto-detects `pihole`, full PATH in cron avoids surprises.
 
 ## Troubleshooting
 
@@ -78,4 +78,3 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MIT. See [LICENSE](LICENSE).
 
 *Last updated: 2025-10-10 • Version: 5.3.2*
-

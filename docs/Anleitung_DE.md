@@ -1,4 +1,4 @@
-# Anleitung DE – Pi-hole Maintenance PRO MAX (v5.3.1)
+# Anleitung DE – Pi-hole Maintenance PRO MAX (v5.3.2)
 
 Nutzung:
   sudo /usr/local/bin/pihole_maintenance_pro.sh
@@ -8,7 +8,11 @@ Installation:
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
 
 Cron:
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
+
+Hinweis:
+  Trixie/Cron nutzt reduzierten PATH. Skript autodetektiert `pihole`, voller PATH in Cron vermeidet Probleme.
 
 Troubleshooting kurz:
 - rfkill → do_wifi_country DE; optional rfkill block wifi

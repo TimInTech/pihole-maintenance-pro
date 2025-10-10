@@ -28,7 +28,7 @@ Pi-hole v6 Wartung für Raspberry Pi OS (Bookworm/Trixie) mit Logging und Health
 **Installer:**
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
-````
+```
 
 **Manuell:**
 
@@ -58,7 +58,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
 ```
 
-> Das Skript erkennt die `pihole`-CLI nun selbst. Ein voller `PATH` im Cron verhindert trotzdem Umgebungsprobleme.
+ > Trixie/Cron nutzt reduzierten PATH. Skript autodetektiert `pihole`, voller PATH in Cron vermeidet Probleme.
 
 ## Troubleshooting
 
