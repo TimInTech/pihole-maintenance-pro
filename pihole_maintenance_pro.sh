@@ -167,11 +167,11 @@ run_step() {
 
   if [[ "$display_only" == "true" ]]; then
     if bash -lc "$cmd" 2>&1 | tee -a "$out" | strip_ansi >"$step_log"; then
-      echo -e "${CHECK} Success"
+      echo -e "${CHECK} Erfolg"
       STATUS["$n"]="${GREEN}✔ OK${NC}"
       [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
     else
-      echo -e "${WARN} Warning"
+      echo -e "${WARN} Warnung"
       STATUS["$n"]="${YELLOW}⚠ WARN${NC}"
       [[ -s "$step_log" ]] && tail -n 20 "$step_log"
       [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler – Abbruch${NC}" && exit 1
@@ -194,12 +194,12 @@ run_step() {
     printf '\r' >"$out" 2>/dev/null || true
   ) &
   if wait "$pid"; then
-    echo -e "\n${CHECK} Success"
+    echo -e "\n${CHECK} Erfolg"
     STATUS["$n"]="${GREEN}✔ OK${NC}"
     [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
   else
     local ec=$?
-    echo -e "\n${FAIL} Error (code: $ec)"
+    echo -e "\n${FAIL} Fehler (Code: $ec)"
     STATUS["$n"]="${RED}✖ FAIL${NC}"
     [[ -f "$step_log" ]] && tail -n 50 "$step_log"
     [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler in Step ${n}${NC}" && exit $ec
@@ -233,7 +233,7 @@ summary() {
     "${PERFORMANCE_DATA[load]:-N/A}" "${PERFORMANCE_DATA[memory]:-N/A}" "${PERFORMANCE_DATA[temp]:-N/A}" "${PERFORMANCE_DATA[disk]:-N/A}"
   echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
   echo
-  echo -e "${MAGENTA}════════ INTELLIGENT SUMMARY ════════${NC}"
+  echo -e "${MAGENTA}════════ INTELLIGENTE ZUSAMMENFASSUNG ════════${NC}"
   for k in $(printf '%s\n' "${!STATUS[@]}" | sort -n); do
     local step_info=""
     case "$k" in
@@ -247,7 +247,8 @@ summary() {
       13) step_info="👥 FTL Client $(get_client_summary)" ;;
       *) step_info="$(get_step_description "$k")" ;;
     esac
-    printf '  %-4s %-50s %s\n' "#${k}" "$step_info" "${STATUS[$k]}"
+    # %b nötig, damit ANSI-Sequenzen in STATUS farbig ausgegeben werden (nicht als \033…)
+    printf '  %-4s %-50s %b\n' "#${k}" "$step_info" "${STATUS[$k]}"
     : "${STEP_LOGFILE[$k]+x}" >/dev/null
   done
   echo
@@ -409,14 +410,14 @@ trap 'rc=$?; echo ""; if [[ "$JSON_OUTPUT" == "1" ]]; then output_json 2>/dev/nu
 # --------------------------- Run -------------------------------------------
 echo_hdr
 
-# 00 – Quick context
-run_step 00 "🧭" "Kontext: Host & Netz" $'\
-  echo "Host: $(hostname)"; \
-  echo "Kernel: $(uname -r)"; \
-  echo "Arch: $(dpkg --print-architecture)"; \
-  ip -4 addr show scope global | awk "/inet /{print \$2, \"on\", \$NF}"; \
-  echo "Default route:"; ip route show default || true; \
-  echo "DNS servers (/etc/resolv.conf):"; grep -E "^nameserver" /etc/resolv.conf || true' false true
+# 00 – Quick context (robuste Quoting, kein $2/$NF in Bash expandieren)
+run_step 00 "🧭" "Kontext: Host & Netz" "\
+  echo \"Host: $(hostname)\"; \
+  echo \"Kernel: $(uname -r)\"; \
+  echo \"Arch: $(dpkg --print-architecture)\"; \
+  ip -4 addr show scope global | awk '/inet /{print \$2, \"on\", \$NF}'; \
+  echo \"Default route:\"; ip route show default || true; \
+  echo \"DNS servers (/etc/resolv.conf):\"; grep -E '^nameserver' /etc/resolv.conf || true" false true
 
 # 01 – APT
 if ((DO_APT == 1)); then
@@ -435,7 +436,8 @@ fi
 # 02 – Security Checks (optional display)
 run_step 20 "🔒" "Security: Offene Ports" "ss -tuln | grep -E '(:22|:80|:443|:53|:8080|:8888)' || true" false true
 run_step 21 "🛡️" "Security: SSH Login Attempts" "lastb -i | head -n 10 || true" false true
-run_step 22 "🔑" "Security: Schwache Passwörter (shadow)" "awk -F: '($2==\"\"||$2==\"*\"||$2==\"!\") {print \$1}' /etc/shadow || true" false true
+# 22 – awk-Programm strikt in Single-Quotes, damit $2 nicht von Bash expandiert
+run_step 22 "🔑" "Security: Schwache Passwörter (shadow)" "awk -F: '(\$2==\"\"||\$2==\"*\"||\$2==\"!\") {print \$1}' /etc/shadow || true" false true
 run_step 23 "🕸️" "Security: Pi-hole Admin Interface" "ss -tuln | grep ':80' | grep 'LISTEN' && grep -q 'WEBPASSWORD' /etc/pihole/setupVars.conf && echo 'Admin-Interface aktiv' || echo 'Admin-Interface nicht gefunden'" false true
 run_step 24 "🧑‍💻" "Security: Sudo-Konfiguration" "grep -E 'NOPASSWD|ALL' /etc/sudoers /etc/sudoers.d/* 2>/dev/null || echo 'Sudo-Konfiguration OK'" false true
 run_step 25 "🔐" "Security: SSH-Konfiguration" "grep -E 'PermitRootLogin|PasswordAuthentication' /etc/ssh/sshd_config || true" false true
@@ -524,7 +526,7 @@ fi
 
 # 14 – Abschluss
 if [[ "$JSON_OUTPUT" == "1" ]]; then output_json; else summary; fi
-echo -e "${GREEN}Done.${NC}"
+echo -e "${GREEN}Fertig.${NC}"
 
 # 🧪 Repo-Selftest
 if [[ "${RUN_SELFTEST:-0}" == "1" ]]; then
