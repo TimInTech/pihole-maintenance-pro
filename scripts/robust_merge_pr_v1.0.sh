@@ -14,7 +14,10 @@ FEAT="feat/v5.3.1-maintenance-readme"
 echo "ℹ️ Starte robusten PR-Merge für #$PR ($FEAT → $BRANCH)..."
 
 # 0) gh bereitstellen & authentifizieren
-command -v gh >/dev/null || { echo "✔️ Installiere GitHub CLI..."; sudo apt update && sudo apt install -y gh; }
+command -v gh >/dev/null || {
+  echo "✔️ Installiere GitHub CLI..."
+  sudo apt update && sudo apt install -y gh
+}
 gh auth status >/dev/null 2>&1 || gh auth login -p https -h github.com -w
 
 # 1) Feature-Branch aktualisieren & robust pushen

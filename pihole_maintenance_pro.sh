@@ -156,6 +156,7 @@ echo_hdr() {
 run_step() {
   local n="$1" icon="$2" title="$3" cmd="$4" critical="${5:-false}" display_only="${6:-false}"
   local step_log="$TMPDIR/step_${n}.log"
+  # shellcheck disable=SC2034  # stored for per-step log paths; may be unused
   STEP_LOGFILE["$n"]="$step_log"
   echo -e "\n${BLUE}╔═[Step ${n}]${NC}\n${BLUE}║ ${icon} ${title}${NC}\n${BLUE}╚═>${NC} "
 
@@ -247,6 +248,7 @@ summary() {
       *) step_info="$(get_step_description "$k")" ;;
     esac
     printf '  %-4s %-50s %s\n' "#${k}" "$step_info" "${STATUS[$k]}"
+    : "${STEP_LOGFILE[$k]+x}" >/dev/null
   done
   echo
   show_recommendations
