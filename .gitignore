@@ -1,33 +1,83 @@
+# ------------------------------
+# General
+# ------------------------------
 *.log
-*.bak
+tmp/
+.temp/
+.cache/
 *.tmp
-.env
-
-# Build/Cache
-dist/
-build/
-__pycache__/
-*.pyc
-.cache/
-
-# IDE/OS
+*.bak
+*.swp
+*~
 .DS_Store
 Thumbs.db
 
-# Backup/Temp directories
-.backup/
-.github/java-upgrade/
+# ------------------------------
+# Copilot / Codex Artefakte
+# ------------------------------
+*Copilot*
+*copilot*
+*.codex
+.codex/
+.codex*
+codex-debug.log
 
-# Build/Cache
+# ------------------------------
+# Build / Test / Temp
+# ------------------------------
+/tmp/
+/*.out
+*.pid
+*.seed
+*.coverage
+coverage/
+node_modules/
 dist/
 build/
-__pycache__/
-*.pyc
-.cache/
 
-# IDE/OS
-.DS_Store
-Thumbs.db
+# ------------------------------
+# IDE / Editor
+# ------------------------------
+.vscode/
+.idea/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Backup/Temp directories
-.backup/
+# ------------------------------
+# OS / Misc
+# ------------------------------
+ehthumbs.db
+desktop.ini
+
+# ------------------------------
+# Repo Specific
+# ------------------------------
+/backup/
+/.backup/
+/.audit/
+/.github/java-upgrade/
+
+# Local test scripts, not for commit
+scripts/test-repo.sh
+
+# ------------------------------
+# Agents / Assistants (do not commit)
+# ------------------------------
+# Ephemeral agent instructions – keep out of repo
+AGENTS.md
+!AGENTS.md
+
+# Copilot artefacts
+copilot-instructions.md
+*Copilot*
+*copilot*
+
+# Codex artefacts
+*.codex
+.codex/
+.codex*
+codex-debug.log
