@@ -144,8 +144,8 @@ echo_hdr() {
   echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.3.2${MAGENTA})  ║${NC}"
   echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
-  if ph -v >/dev/null 2>&1; then
-    PH_VER="$(ph -v 2>/dev/null || true)"
+  if "$PIHOLE_BIN" -v >/dev/null 2>&1; then
+    PH_VER="$("$PIHOLE_BIN" -v 2>/dev/null || true)"
     echo -e "${MAGENTA}║${NC} Version: ${CYAN}${PH_VER:-unbekannt}${NC}"
   else
     echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
@@ -474,10 +474,10 @@ backup_pihole() {
 }
 
 # 03 – Pi-hole Version & Updates
-run_step 03 "🔎" "Pi-hole Version" "ph -v" false true
+run_step 03 "🔎" "Pi-hole Version" "\"$PIHOLE_BIN\" -v" false true
 if ((DO_UPGRADE == 1)); then
   backup_pihole
-  run_step 04 "🆙" "Pi-hole self-update" "ph -up"
+  run_step 04 "🆙" "Pi-hole self-update" "\"$PIHOLE_BIN\" -up"
 else
   echo -e "${YELLOW}Pi-hole Upgrade übersprungen (--no-upgrade).${NC}"
 fi
@@ -485,14 +485,14 @@ fi
 # 05 – Gravity
 if ((DO_GRAVITY == 1)); then
   backup_pihole
-  run_step 05 "📋" "Update Gravity / Blocklists" "ph -g"
+  run_step 05 "📋" "Update Gravity / Blocklists" "\"$PIHOLE_BIN\" -g"
 else
   echo -e "${YELLOW}Gravity-Update übersprungen (--no-gravity).${NC}"
 fi
 
 # 06 – DNS reload
 if ((DO_DNSRELOAD == 1)); then
-  run_step 06 "🔁" "Reload DNS (reloaddns)" "ph reloaddns"
+  run_step 06 "🔁" "Reload DNS (reloaddns)" "\"$PIHOLE_BIN\" reloaddns"
 else
   echo -e "${YELLOW}DNS-Reload übersprungen (--no-dnsreload).${NC}"
 fi
