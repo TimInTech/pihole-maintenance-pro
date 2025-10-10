@@ -84,7 +84,7 @@ while (("$#")); do
       shift
       ;;
     -h | --help)
-      cat <<'EOF'
+      cat << 'EOF'
 Usage: sudo ./pihole_maintenance_pro.sh [options]
   --no-apt         Skip apt update/upgrade/autoremove
   --no-upgrade     Skip "pihole -up"
@@ -119,6 +119,8 @@ if [[ -z "$PIHOLE_BIN" ]]; then
 fi
 # Einheitlicher Wrapper
 ph() { "$PIHOLE_BIN" "$@"; }
+export PIHOLE_BIN
+export -f ph
 
 # --------------------------- Paths & globals --------------------------------
 TMPDIR="$(mktemp -d -t pihole_maint_XXXX)"
@@ -144,8 +146,8 @@ echo_hdr() {
   echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${MAGENTA}║${NC}   🛰️  ${BOLD}PI-HOLE MAINTENANCE PRO MAX${NC}${MAGENTA}  -  TimInTech  (${CYAN}v5.3.2${MAGENTA})  ║${NC}"
   echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════════════╣${NC}"
-  if "$PIHOLE_BIN" -v >/dev/null 2>&1; then
-    PH_VER="$("$PIHOLE_BIN" -v 2>/dev/null || true)"
+  if "$PIHOLE_BIN" -v > /dev/null 2>&1; then
+    PH_VER="$("$PIHOLE_BIN" -v 2> /dev/null || true)"
     echo -e "${MAGENTA}║${NC} Version: ${CYAN}${PH_VER:-unbekannt}${NC}"
   else
     echo -e "${MAGENTA}║${NC} ${YELLOW}Pi-hole CLI nicht gefunden${NC}"
@@ -156,7 +158,7 @@ echo_hdr() {
 run_step() {
   local n="$1" icon="$2" title="$3" cmd="$4" critical="${5:-false}" display_only="${6:-false}"
   local step_log="$TMPDIR/step_${n}.log"
-  # shellcheck disable=SC2034  # stored for per-step log paths; may be unused
+  # shellcheck disable=SC2034  # consumed later when printing per-step log paths
   STEP_LOGFILE["$n"]="$step_log"
   echo -e "\n${BLUE}╔═[Step ${n}]${NC}\n${BLUE}║ ${icon} ${title}${NC}\n${BLUE}╚═>${NC} "
 
@@ -166,7 +168,7 @@ run_step() {
   fi
 
   if [[ "$display_only" == "true" ]]; then
-    if bash -lc "$cmd" 2>&1 | tee -a "$out" | strip_ansi >"$step_log"; then
+    if bash -lc "$cmd" 2>&1 | tee -a "$out" | strip_ansi > "$step_log"; then
       echo -e "${CHECK} Erfolg"
       STATUS["$n"]="${GREEN}✔ OK${NC}"
       [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
@@ -179,19 +181,19 @@ run_step() {
     return 0
   fi
 
-  bash -lc "$cmd" 2>&1 | strip_ansi >"$step_log" &
+  bash -lc "$cmd" 2>&1 | strip_ansi > "$step_log" &
   local pid=$!
   (
     local spin=('⠋' '⠙' '⠸' '⠴' '⠦' '⠇')
     local i=0
-    while kill -0 "$pid" 2>/dev/null; do
+    while kill -0 "$pid" 2> /dev/null; do
       local last=""
       [[ -f "$step_log" ]] && last="$(tail -n1 "$step_log" | cut -c1-80)"
-      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "$last" "$NC" "$BLUE" "$pid" "$NC" "${spin[$((i % ${#spin[@]}))]}" >"$out" 2>/dev/null || true
+      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "$last" "$NC" "$BLUE" "$pid" "$NC" "${spin[$((i % ${#spin[@]}))]}" > "$out" 2> /dev/null || true
       i=$((i + 1))
       sleep 0.25
     done
-    printf '\r' >"$out" 2>/dev/null || true
+    printf '\r' > "$out" 2> /dev/null || true
   ) &
   if wait "$pid"; then
     echo -e "\n${CHECK} Erfolg"
@@ -208,9 +210,9 @@ run_step() {
 
 collect_system_info() {
   PERFORMANCE_DATA[load]=$(uptime | awk -F'load average: ' '{print $2}' | cut -d',' -f1 | xargs)
-  PERFORMANCE_DATA[memory]=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}' 2>/dev/null || echo "N/A")
+  PERFORMANCE_DATA[memory]=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}' 2> /dev/null || echo "N/A")
   PERFORMANCE_DATA[disk]=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
-  [[ -f /sys/class/thermal/thermal_zone0/temp ]] && PERFORMANCE_DATA[temp]=$(($(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0) / 1000)) || PERFORMANCE_DATA[temp]="N/A"
+  [[ -f /sys/class/thermal/thermal_zone0/temp ]] && PERFORMANCE_DATA[temp]=$(($(cat /sys/class/thermal/thermal_zone0/temp 2> /dev/null || echo 0) / 1000)) || PERFORMANCE_DATA[temp]="N/A"
 }
 
 extract_step_data() {
@@ -238,7 +240,11 @@ summary() {
     local step_info=""
     case "$k" in
       00) step_info="🌍 Network    ${STEP_DATA[00_ip]:+IP: ${STEP_DATA[00_ip]}}" ;;
-      03) step_info="🛡️  Pi-hole    ${STEP_DATA[03_version]:+v${STEP_DATA[03_version]}}" ;;
+      03)
+        ver="${STEP_DATA[03_version]}"
+        ver="${ver#v}"
+        step_info="🛡️  Pi-hole    ${ver:+v$ver}"
+        ;;
       07) step_info="🔍 Health     ${STEP_DATA[07_listeners]:+${STEP_DATA[07_listeners]} listeners}" ;;
       08) step_info="🌐 DNS Ext    ${STEP_DATA[08_response]:-${NC}}" ;;
       09) step_info="🏠 DNS Local  ${STEP_DATA[09_response]:-${NC}}" ;;
@@ -249,7 +255,7 @@ summary() {
     esac
     # %b nötig, damit ANSI-Sequenzen in STATUS farbig ausgegeben werden (nicht als \033…)
     printf '  %-4s %-50s %b\n' "#${k}" "$step_info" "${STATUS[$k]}"
-    : "${STEP_LOGFILE[$k]+x}" >/dev/null
+    : "${STEP_LOGFILE[$k]+x}" > /dev/null
   done
   echo
   show_recommendations
@@ -268,10 +274,10 @@ get_step_description() {
 }
 
 get_query_summary() {
-  if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+  if [[ -n "$FTL_DB" ]] && command -v sqlite3 > /dev/null 2>&1; then
     local total_queries blocked_queries blocked_percent
-    total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
-    blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2>/dev/null || echo 0)
+    total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2> /dev/null || echo 0)
+    blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2> /dev/null || echo 0)
     if [[ "$total_queries" -gt 0 ]]; then
       blocked_percent=$((blocked_queries * 100 / total_queries))
       echo "24h: ${total_queries} queries, ${blocked_percent}% blocked"
@@ -282,9 +288,9 @@ get_query_summary() {
 }
 
 get_client_summary() {
-  if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+  if [[ -n "$FTL_DB" ]] && command -v sqlite3 > /dev/null 2>&1; then
     local unique_clients
-    unique_clients=$(sqlite3 "$FTL_DB" "SELECT COUNT(DISTINCT client) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
+    unique_clients=$(sqlite3 "$FTL_DB" "SELECT COUNT(DISTINCT client) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2> /dev/null || echo 0)
     echo "${unique_clients} active clients"
   else
     echo "DB not available"
@@ -339,9 +345,9 @@ output_json() {
   total_queries=0
   blocked_queries=0
   blocked_percentage=0
-  if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
-    total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
-    blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2>/dev/null || echo 0)
+  if [[ -n "$FTL_DB" ]] && command -v sqlite3 > /dev/null 2>&1; then
+    total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2> /dev/null || echo 0)
+    blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2> /dev/null || echo 0)
     if [[ "$total_queries" -gt 0 ]]; then blocked_percentage=$(awk "BEGIN {printf \"%.1f\", $blocked_queries/$total_queries*100}"); fi
   fi
 
@@ -359,7 +365,7 @@ output_json() {
     recommendations+=("restart_pihole_ftl")
   }
 
-  cat <<EOF
+  cat << EOF
 {
   "timestamp": "$timestamp",
   "status": "$overall_status",
@@ -390,7 +396,7 @@ output_json() {
   },
   "pihole": {
     "version": "${STEP_DATA[03_version]:-N/A}",
-    "gravity_last_update": "$(stat -c %Y /etc/pihole/gravity.db 2>/dev/null || echo 0)"
+    "gravity_last_update": "$(stat -c %Y /etc/pihole/gravity.db 2> /dev/null || echo 0)"
   },
   "logs": { "main_log": "$LOGFILE", "step_logs": "$TMPDIR" }
 }
@@ -404,8 +410,20 @@ for c in /etc/pihole/pihole-FTL.db /run/pihole-FTL.db /var/lib/pihole/pihole-FTL
 done
 # (gravity DB path is queried lazily when needed)
 
-# shellcheck disable=SC2154
-trap 'rc=$?; echo ""; if [[ "$JSON_OUTPUT" == "1" ]]; then output_json 2>/dev/null || true; else summary 2>/dev/null || true; fi; rm -rf "$TMPDIR" 2>/dev/null || true; [[ $rc -ne 0 ]] && echo -e "${RED}Script ended with exit code $rc${NC}"; exit $rc' EXIT
+# shellcheck disable=SC2317  # trap callback is invoked by bash
+on_exit() {
+  local rc="$1"
+  echo ""
+  if [[ "$JSON_OUTPUT" == "1" ]]; then
+    output_json 2>/dev/null || true
+  else
+    summary 2>/dev/null || true
+  fi
+  rm -rf "$TMPDIR" 2>/dev/null || true
+  [[ $rc -ne 0 ]] && echo -e "${RED}Script ended with exit code $rc${NC}"
+  exit "$rc"
+}
+trap 'on_exit $?' EXIT
 
 # --------------------------- Run -------------------------------------------
 echo_hdr
@@ -425,7 +443,7 @@ if ((DO_APT == 1)); then
   run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
   run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
   if dpkg --print-architecture | grep -q '^armhf$'; then
-    if apt list --upgradable 2>/dev/null | grep -q '^linux-image-rpi-v8'; then
+    if apt list --upgradable 2> /dev/null | grep -q '^linux-image-rpi-v8'; then
       echo -e "${YELLOW}Hinweis:${NC} 'linux-image-rpi-v8' ist 64-bit (ARMv8). Auf Pi 3B (ARMv7) ignorierbar."
     fi
   fi
@@ -442,14 +460,14 @@ run_step 23 "🕸️" "Security: Pi-hole Admin Interface" "ss -tuln | grep ':80'
 run_step 24 "🧑‍💻" "Security: Sudo-Konfiguration" "grep -E 'NOPASSWD|ALL' /etc/sudoers /etc/sudoers.d/* 2>/dev/null || echo 'Sudo-Konfiguration OK'" false true
 run_step 25 "🔐" "Security: SSH-Konfiguration" "grep -E 'PermitRootLogin|PasswordAuthentication' /etc/ssh/sshd_config || true" false true
 run_step 26 "📦" "Security: Ausstehende Updates" "apt list --upgradable 2>/dev/null | grep -v 'Listing' || echo 'Keine Updates verfügbar'" false true
-command -v chkrootkit >/dev/null 2>&1 && run_step 27 "🦠" "Security: chkrootkit" "chkrootkit || true" false true
-command -v rkhunter >/dev/null 2>&1 && run_step 28 "🦠" "Security: rkhunter" "rkhunter --check --sk --nocolors || true" false true
-command -v clamscan >/dev/null 2>&1 && run_step 29 "🦠" "Security: clamav" "clamscan -r /etc/pihole || true" false true
+command -v chkrootkit > /dev/null 2>&1 && run_step 27 "🦠" "Security: chkrootkit" "chkrootkit || true" false true
+command -v rkhunter > /dev/null 2>&1 && run_step 28 "🦠" "Security: rkhunter" "rkhunter --check --sk --nocolors || true" false true
+command -v clamscan > /dev/null 2>&1 && run_step 29 "🦠" "Security: clamav" "clamscan -r /etc/pihole || true" false true
 
 # Logfile-Monitoring
 PIHOLE_LOG="/var/log/pihole.log"
 if [[ -f "$PIHOLE_LOG" ]]; then
-  LOGSIZE=$(stat -c %s "$PIHOLE_LOG" 2>/dev/null || echo 0)
+  LOGSIZE=$(stat -c %s "$PIHOLE_LOG" 2> /dev/null || echo 0)
   ((LOGSIZE > 1073741824)) && echo -e "${YELLOW}WARNUNG: pihole.log > 1GB! Empfehlung: logrotate aktivieren.${NC}"
 fi
 
@@ -458,9 +476,9 @@ if ((DO_BACKUP == 1)); then
   BACKUP_DIR="/var/backups/pihole/$(date +%Y%m%d_%H%M%S)"
   MAX_BACKUPS=5
   mkdir -p "$BACKUP_DIR"
-  cp -a /etc/pihole/gravity.db "$BACKUP_DIR" 2>/dev/null || true
-  cp -a /etc/pihole/pihole-FTL.db "$BACKUP_DIR" 2>/dev/null || true
-  cp -a /etc/pihole/custom.list "$BACKUP_DIR" 2>/dev/null || true
+  cp -a /etc/pihole/gravity.db "$BACKUP_DIR" 2> /dev/null || true
+  cp -a /etc/pihole/pihole-FTL.db "$BACKUP_DIR" 2> /dev/null || true
+  cp -a /etc/pihole/custom.list "$BACKUP_DIR" 2> /dev/null || true
   echo "Backup gespeichert: $BACKUP_DIR"
   find /var/backups/pihole/ -maxdepth 1 -type d -printf '%T@ %p\n' | sort -n | awk '{print $2}' | head -n -$MAX_BACKUPS | xargs -r rm -rf
 fi
@@ -468,8 +486,8 @@ backup_pihole() {
   local backup_dir
   backup_dir="/etc/pihole/backup_$(date +%Y%m%d_%H%M%S)"
   mkdir -p "$backup_dir"
-  cp -a /etc/pihole/*.db "$backup_dir" 2>/dev/null || true
-  cp -a /etc/pihole/*.conf "$backup_dir" 2>/dev/null || true
+  cp -a /etc/pihole/*.db "$backup_dir" 2> /dev/null || true
+  cp -a /etc/pihole/*.conf "$backup_dir" 2> /dev/null || true
   echo "Backup erstellt: $backup_dir"
 }
 
@@ -509,7 +527,7 @@ run_step 10 "🐙" "GitHub Reachability" $'\
   curl -4 -sI https://raw.githubusercontent.com | head -n 1 || true' false true
 
 # 11 – Tailscale (optional)
-if command -v tailscale >/dev/null 2>&1; then
+if command -v tailscale > /dev/null 2>&1; then
   run_step 11 "🧩" "Tailscale Status (Kurz)" $'\
     echo -n "TS IPv4: "; tailscale ip -4 2>/dev/null || true; \
     echo -n "TS IPv6: "; tailscale ip -6 2>/dev/null || true; \
@@ -517,16 +535,14 @@ if command -v tailscale >/dev/null 2>&1; then
 fi
 
 # 12 – FTL Toplists
-if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$FTL_DB" ]]; then
+if command -v sqlite3 > /dev/null 2>&1 && [[ -f "$FTL_DB" ]]; then
   run_step 12 "📈" "Top 5 Domains (FTL)" $'sqlite3 -readonly "$FTL_DB" "SELECT domain, COUNT(1) c FROM queries GROUP BY domain ORDER BY c DESC LIMIT 5;" || true' false true
   run_step 13 "👥" "Top 5 Clients (FTL)" $'sqlite3 -readonly "$FTL_DB" "SELECT client, COUNT(1) c FROM queries GROUP BY client ORDER BY c DESC LIMIT 5;" || true' false true
 else
   echo -e "${YELLOW}sqlite3 oder FTL DB nicht gefunden – Überspringe Top-Listen.${NC}"
 fi
 
-# 14 – Abschluss
-if [[ "$JSON_OUTPUT" == "1" ]]; then output_json; else summary; fi
-echo -e "${GREEN}Fertig.${NC}"
+# 14 – Abschluss (Summary/JSON kommt aus EXIT-Trap)
 
 # 🧪 Repo-Selftest
 if [[ "${RUN_SELFTEST:-0}" == "1" ]]; then

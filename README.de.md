@@ -35,14 +35,14 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-mainten
 ## Update / Überschreiben (sichere Re-Installation)
 
 Zieht die aktuelle Version und überschreibt die vorhandene:
-`bash
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
-`
+```
 
 ## Uninstall (saubere Entfernung)
-`bash
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/uninstall.sh)"
-`
+```
 
 > Beide Befehle sind idempotent: *Update* ersetzt die installierte Datei; *Uninstall* entfernt Script, Logs, Temp-Daten und den Cron-Eintrag.
 <!-- UNINSTALL:END -->

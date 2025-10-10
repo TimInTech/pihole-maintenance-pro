@@ -9,7 +9,7 @@
 
 **Languages:** 🇬🇧 English (this file) • [🇩🇪 Deutsch](README.de.md)
 
-</div>
+
 
 ---
 
@@ -33,14 +33,14 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-mainten
 ## Update / Overwrite (safe re-install)
 
 Use this to pull and overwrite with the latest release:
-`bash
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
-`
+```
 
 ## Uninstall (clean removal)
-`bash
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/uninstall.sh)"
-`
+```
 
 > These commands are idempotent: *Update* always replaces the installed script; *Uninstall* removes the script, logs, temp data, and the cron entry.
 <!-- UNINSTALL:END -->
