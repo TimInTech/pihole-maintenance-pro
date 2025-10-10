@@ -17,14 +17,32 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Voller PATH für cron/Nicht-Login-Shells (früh setzen)
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 # --------------------------- Colors & symbols -------------------------------
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-  RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
-  MAGENTA='\033[0;35m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  BLUE='\033[0;34m'
+  MAGENTA='\033[0;35m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  NC='\033[0m'
 else
-  RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; BOLD=""; NC=""
+  RED=""
+  GREEN=""
+  YELLOW=""
+  BLUE=""
+  MAGENTA=""
+  CYAN=""
+  BOLD=""
+  NC=""
 fi
-CHECK="${GREEN}✔${NC}"; WARN="${YELLOW}⚠${NC}"; FAIL="${RED}✖${NC}"
+CHECK="${GREEN}✔${NC}"
+WARN="${YELLOW}⚠${NC}"
+FAIL="${RED}✖${NC}"
 
 # --------------------------- Root check ------------------------------------
 if [[ ${EUID} -ne 0 ]]; then
@@ -33,16 +51,39 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 
 # --------------------------- Args ------------------------------------------
-DO_APT=1; DO_UPGRADE=1; DO_GRAVITY=1; DO_DNSRELOAD=1; JSON_OUTPUT=0; DO_BACKUP=0
+DO_APT=1
+DO_UPGRADE=1
+DO_GRAVITY=1
+DO_DNSRELOAD=1
+JSON_OUTPUT=0
+DO_BACKUP=0
 while (("$#")); do
   case "$1" in
-    --no-apt) DO_APT=0; shift ;;
-    --no-upgrade) DO_UPGRADE=0; shift ;;
-    --no-gravity) DO_GRAVITY=0; shift ;;
-    --no-dnsreload) DO_DNSRELOAD=0; shift ;;
-    --backup) DO_BACKUP=1; shift ;;
-    --json) JSON_OUTPUT=1; shift ;;
-    -h|--help)
+    --no-apt)
+      DO_APT=0
+      shift
+      ;;
+    --no-upgrade)
+      DO_UPGRADE=0
+      shift
+      ;;
+    --no-gravity)
+      DO_GRAVITY=0
+      shift
+      ;;
+    --no-dnsreload)
+      DO_DNSRELOAD=0
+      shift
+      ;;
+    --backup)
+      DO_BACKUP=1
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=1
+      shift
+      ;;
+    -h | --help)
       cat <<'EOF'
 Usage: sudo ./pihole_maintenance_pro.sh [options]
   --no-apt         Skip apt update/upgrade/autoremove
@@ -51,20 +92,24 @@ Usage: sudo ./pihole_maintenance_pro.sh [options]
   --no-dnsreload   Skip "pihole reloaddns"
   --json           Output results in JSON format
 EOF
-      exit 0 ;;
-    *) echo "Unknown option: $1" >&2; exit 2 ;;
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
   esac
 done
 
 # --------------------------- PATH + pihole wrapper --------------------------
-# Voller PATH für cron/Nicht-Login-Shells
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
 # 'pihole' binär finden
 PIHOLE_BIN="$(command -v pihole || true)"
 if [[ -z "$PIHOLE_BIN" ]]; then
   for d in /usr/local/bin /usr/local/sbin /usr/bin /usr/sbin /bin /sbin; do
-    if [[ -x "$d/pihole" ]]; then PIHOLE_BIN="$d/pihole"; break; fi
+    if [[ -x "$d/pihole" ]]; then
+      PIHOLE_BIN="$d/pihole"
+      break
+    fi
   done
 fi
 if [[ -z "$PIHOLE_BIN" ]]; then
@@ -88,6 +133,7 @@ fi
 trap 'rm -rf "$TMPDIR" 2>/dev/null || true' EXIT
 exec > >(tee -a "$LOGFILE") 2>&1
 
+# shellcheck disable=SC2034
 declare -A STATUS STEP_LOGFILE STEP_DATA PERFORMANCE_DATA
 
 # --------------------------- Utils -----------------------------------------
@@ -109,7 +155,9 @@ echo_hdr() {
 
 run_step() {
   local n="$1" icon="$2" title="$3" cmd="$4" critical="${5:-false}" display_only="${6:-false}"
-  local step_log="$TMPDIR/step_${n}.log"; STEP_LOGFILE["$n"]="$step_log"
+  local step_log="$TMPDIR/step_${n}.log"
+  # shellcheck disable=SC2034  # stored for per-step log paths; may be unused
+  STEP_LOGFILE["$n"]="$step_log"
   echo -e "\n${BLUE}╔═[Step ${n}]${NC}\n${BLUE}║ ${icon} ${title}${NC}\n${BLUE}╚═>${NC} "
 
   local out="/dev/null"
@@ -119,28 +167,41 @@ run_step() {
 
   if [[ "$display_only" == "true" ]]; then
     if bash -lc "$cmd" 2>&1 | tee -a "$out" | strip_ansi >"$step_log"; then
-      echo -e "${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"
+      echo -e "${CHECK} Success"
+      STATUS["$n"]="${GREEN}✔ OK${NC}"
       [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
     else
-      echo -e "${WARN} Warning"; STATUS["$n"]="${YELLOW}⚠ WARN${NC}"; [[ -s "$step_log" ]] && tail -n 20 "$step_log"
+      echo -e "${WARN} Warning"
+      STATUS["$n"]="${YELLOW}⚠ WARN${NC}"
+      [[ -s "$step_log" ]] && tail -n 20 "$step_log"
       [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler – Abbruch${NC}" && exit 1
-    fi; return 0
+    fi
+    return 0
   fi
 
-  bash -lc "$cmd" 2>&1 | strip_ansi >"$step_log" & local pid=$!
+  bash -lc "$cmd" 2>&1 | strip_ansi >"$step_log" &
+  local pid=$!
   (
-    local spin=( '⠋' '⠙' '⠸' '⠴' '⠦' '⠇' ); local i=0
+    local spin=('⠋' '⠙' '⠸' '⠴' '⠦' '⠇')
+    local i=0
     while kill -0 "$pid" 2>/dev/null; do
-      local last=""; [[ -f "$step_log" ]] && last="$(tail -n1 "$step_log" | cut -c1-80)"
-      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "$last" "$NC" "$BLUE" "$pid" "$NC" "${spin[$((i%${#spin[@]}))]}" >"$out" 2>/dev/null || true
-      i=$((i+1)); sleep 0.25
+      local last=""
+      [[ -f "$step_log" ]] && last="$(tail -n1 "$step_log" | cut -c1-80)"
+      printf '\r%s%s%s %s[PID:%s]%s %s' "$CYAN" "$last" "$NC" "$BLUE" "$pid" "$NC" "${spin[$((i % ${#spin[@]}))]}" >"$out" 2>/dev/null || true
+      i=$((i + 1))
+      sleep 0.25
     done
     printf '\r' >"$out" 2>/dev/null || true
   ) &
   if wait "$pid"; then
-    echo -e "\n${CHECK} Success"; STATUS["$n"]="${GREEN}✔ OK${NC}"; [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
+    echo -e "\n${CHECK} Success"
+    STATUS["$n"]="${GREEN}✔ OK${NC}"
+    [[ -f "$step_log" ]] && extract_step_data "$n" "$(cat "$step_log")"
   else
-    local ec=$?; echo -e "\n${FAIL} Error (code: $ec)"; STATUS["$n"]="${RED}✖ FAIL${NC}"; [[ -f "$step_log" ]] && tail -n 50 "$step_log"
+    local ec=$?
+    echo -e "\n${FAIL} Error (code: $ec)"
+    STATUS["$n"]="${RED}✖ FAIL${NC}"
+    [[ -f "$step_log" ]] && tail -n 50 "$step_log"
     [[ "$critical" == "true" ]] && echo -e "${RED}[ERROR] Kritischer Fehler in Step ${n}${NC}" && exit $ec
   fi
 }
@@ -149,7 +210,7 @@ collect_system_info() {
   PERFORMANCE_DATA[load]=$(uptime | awk -F'load average: ' '{print $2}' | cut -d',' -f1 | xargs)
   PERFORMANCE_DATA[memory]=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}' 2>/dev/null || echo "N/A")
   PERFORMANCE_DATA[disk]=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
-  [[ -f /sys/class/thermal/thermal_zone0/temp ]] && PERFORMANCE_DATA[temp]=$(( $(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0)/1000 )) || PERFORMANCE_DATA[temp]="N/A"
+  [[ -f /sys/class/thermal/thermal_zone0/temp ]] && PERFORMANCE_DATA[temp]=$(($(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0) / 1000)) || PERFORMANCE_DATA[temp]="N/A"
 }
 
 extract_step_data() {
@@ -166,11 +227,13 @@ extract_step_data() {
 
 summary() {
   collect_system_info
-  echo; echo -e "${CYAN}╔═══════════════ PERFORMANCE DASHBOARD ═══════════════╗${NC}"
+  echo
+  echo -e "${CYAN}╔═══════════════ PERFORMANCE DASHBOARD ═══════════════╗${NC}"
   printf "${CYAN}║${NC} 🚀 Load: %-8s 💾 RAM: %s%%    🌡️  Temp: %s°C    🗄️  Disk: %s%% ${CYAN}║${NC}\n" \
     "${PERFORMANCE_DATA[load]:-N/A}" "${PERFORMANCE_DATA[memory]:-N/A}" "${PERFORMANCE_DATA[temp]:-N/A}" "${PERFORMANCE_DATA[disk]:-N/A}"
   echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
-  echo; echo -e "${MAGENTA}════════ INTELLIGENT SUMMARY ════════${NC}"
+  echo
+  echo -e "${MAGENTA}════════ INTELLIGENT SUMMARY ════════${NC}"
   for k in $(printf '%s\n' "${!STATUS[@]}" | sort -n); do
     local step_info=""
     case "$k" in
@@ -182,11 +245,13 @@ summary() {
       10) step_info="📡 GitHub     ${STEP_DATA[10_github]:-${NC}}" ;;
       12) step_info="📊 FTL Query  $(get_query_summary)" ;;
       13) step_info="👥 FTL Client $(get_client_summary)" ;;
-      *)  step_info="$(get_step_description "$k")" ;;
+      *) step_info="$(get_step_description "$k")" ;;
     esac
     printf '  %-4s %-50s %s\n' "#${k}" "$step_info" "${STATUS[$k]}"
+    : "${STEP_LOGFILE[$k]+x}" >/dev/null
   done
-  echo; show_recommendations
+  echo
+  show_recommendations
   echo -e "Log: ${CYAN}$LOGFILE${NC}"
   echo -e "Step logs: ${CYAN}$TMPDIR${NC} (werden beim Exit gelöscht)"
 }
@@ -206,7 +271,10 @@ get_query_summary() {
     local total_queries blocked_queries blocked_percent
     total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
     blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2>/dev/null || echo 0)
-    if [[ "$total_queries" -gt 0 ]]; then blocked_percent=$(( blocked_queries * 100 / total_queries )); echo "24h: ${total_queries} queries, ${blocked_percent}% blocked"; else echo "No recent data"; fi
+    if [[ "$total_queries" -gt 0 ]]; then
+      blocked_percent=$((blocked_queries * 100 / total_queries))
+      echo "24h: ${total_queries} queries, ${blocked_percent}% blocked"
+    else echo "No recent data"; fi
   else
     echo "DB not available"
   fi
@@ -214,7 +282,8 @@ get_query_summary() {
 
 get_client_summary() {
   if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
-    local unique_clients; unique_clients=$(sqlite3 "$FTL_DB" "SELECT COUNT(DISTINCT client) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
+    local unique_clients
+    unique_clients=$(sqlite3 "$FTL_DB" "SELECT COUNT(DISTINCT client) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
     echo "${unique_clients} active clients"
   else
     echo "DB not available"
@@ -223,27 +292,52 @@ get_client_summary() {
 
 show_recommendations() {
   local warnings=() recommendations=()
-  [[ "${PERFORMANCE_DATA[memory]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[memory] > 85 )) && { warnings+=("⚠️  High memory usage: ${PERFORMANCE_DATA[memory]}%"); recommendations+=("💡 Consider restarting FTL or increasing RAM"); }
-  [[ "${PERFORMANCE_DATA[disk]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[disk] > 85 )) && { warnings+=("⚠️  Low disk space: ${PERFORMANCE_DATA[disk]}% used"); recommendations+=("💡 Consider log rotation or cleanup: pihole -f"); }
-  [[ "${PERFORMANCE_DATA[temp]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[temp] > 70 )) && { warnings+=("🌡️  High temperature: ${PERFORMANCE_DATA[temp]}°C"); recommendations+=("💡 Check cooling/ventilation"); }
-  [[ "${STEP_DATA[07_listeners]}" =~ ^[0-9]+$ ]] && (( STEP_DATA[07_listeners] < 1 )) && { warnings+=("🔥 CRITICAL: No DNS listeners on port 53"); recommendations+=("🚨 Restart Pi-hole FTL: sudo systemctl restart pihole-FTL"); }
-  (( ${#warnings[@]} )) && { echo -e "\n${YELLOW}════════ WARNINGS ════════${NC}"; printf '%s\n' "${warnings[@]}"; }
-  (( ${#recommendations[@]} )) && { echo -e "\n${BLUE}════════ RECOMMENDATIONS ════════${NC}"; printf '%s\n' "${recommendations[@]}"; }
+  [[ "${PERFORMANCE_DATA[memory]}" =~ ^[0-9]+$ ]] && ((PERFORMANCE_DATA[memory] > 85)) && {
+    warnings+=("⚠️  High memory usage: ${PERFORMANCE_DATA[memory]}%")
+    recommendations+=("💡 Consider restarting FTL or increasing RAM")
+  }
+  [[ "${PERFORMANCE_DATA[disk]}" =~ ^[0-9]+$ ]] && ((PERFORMANCE_DATA[disk] > 85)) && {
+    warnings+=("⚠️  Low disk space: ${PERFORMANCE_DATA[disk]}% used")
+    recommendations+=("💡 Consider log rotation or cleanup: pihole -f")
+  }
+  [[ "${PERFORMANCE_DATA[temp]}" =~ ^[0-9]+$ ]] && ((PERFORMANCE_DATA[temp] > 70)) && {
+    warnings+=("🌡️  High temperature: ${PERFORMANCE_DATA[temp]}°C")
+    recommendations+=("💡 Check cooling/ventilation")
+  }
+  [[ "${STEP_DATA[07_listeners]}" =~ ^[0-9]+$ ]] && ((STEP_DATA[07_listeners] < 1)) && {
+    warnings+=("🔥 CRITICAL: No DNS listeners on port 53")
+    recommendations+=("🚨 Restart Pi-hole FTL: sudo systemctl restart pihole-FTL")
+  }
+  ((${#warnings[@]})) && {
+    echo -e "\n${YELLOW}════════ WARNINGS ════════${NC}"
+    printf '%s\n' "${warnings[@]}"
+  }
+  ((${#recommendations[@]})) && {
+    echo -e "\n${BLUE}════════ RECOMMENDATIONS ════════${NC}"
+    printf '%s\n' "${recommendations[@]}"
+  }
 }
 
 output_json() {
   collect_system_info
   local timestamp total_steps successful_steps failed_steps warned_steps overall_status total_queries blocked_queries blocked_percentage
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  total_steps=${#STATUS[@]}; successful_steps=0; failed_steps=0; warned_steps=0
+  total_steps=${#STATUS[@]}
+  successful_steps=0
+  failed_steps=0
+  warned_steps=0
   for s in "${STATUS[@]}"; do
-    [[ "$s" == *OK* ]] && ((successful_steps++)) || true
-    [[ "$s" == *FAIL* ]] && ((failed_steps++)) || true
-    [[ "$s" == *WARN* ]] && ((warned_steps++)) || true
+    if [[ "$s" == *OK* ]]; then ((successful_steps++)); fi
+    if [[ "$s" == *FAIL* ]]; then ((failed_steps++)); fi
+    if [[ "$s" == *WARN* ]]; then ((warned_steps++)); fi
   done
-  overall_status="healthy"; (( failed_steps > 0 )) && overall_status="critical"; (( warned_steps > 0 && failed_steps == 0 )) && overall_status="warning"
+  overall_status="healthy"
+  ((failed_steps > 0)) && overall_status="critical"
+  ((warned_steps > 0 && failed_steps == 0)) && overall_status="warning"
 
-  total_queries=0; blocked_queries=0; blocked_percentage=0
+  total_queries=0
+  blocked_queries=0
+  blocked_percentage=0
   if [[ -n "$FTL_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
     total_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours');" 2>/dev/null || echo 0)
     blocked_queries=$(sqlite3 "$FTL_DB" "SELECT COUNT(*) FROM queries WHERE timestamp > strftime('%s','now','-24 hours') AND status IN (1,4,5,6,7,8,9,10,11);" 2>/dev/null || echo 0)
@@ -251,9 +345,18 @@ output_json() {
   fi
 
   local issues=() recommendations=()
-  [[ "${PERFORMANCE_DATA[memory]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[memory] > 85 )) && { issues+=("high_memory"); recommendations+=("restart_ftl"); }
-  [[ "${PERFORMANCE_DATA[disk]}" =~ ^[0-9]+$ ]] && (( PERFORMANCE_DATA[disk] > 85 )) && { issues+=("low_disk_space"); recommendations+=("log_rotation"); }
-  [[ "${STEP_DATA[07_listeners]}" =~ ^[0-9]+$ ]] && (( STEP_DATA[07_listeners] < 1 )) && { issues+=("no_dns_listeners"); recommendations+=("restart_pihole_ftl"); }
+  [[ "${PERFORMANCE_DATA[memory]}" =~ ^[0-9]+$ ]] && ((PERFORMANCE_DATA[memory] > 85)) && {
+    issues+=("high_memory")
+    recommendations+=("restart_ftl")
+  }
+  [[ "${PERFORMANCE_DATA[disk]}" =~ ^[0-9]+$ ]] && ((PERFORMANCE_DATA[disk] > 85)) && {
+    issues+=("low_disk_space")
+    recommendations+=("log_rotation")
+  }
+  [[ "${STEP_DATA[07_listeners]}" =~ ^[0-9]+$ ]] && ((STEP_DATA[07_listeners] < 1)) && {
+    issues+=("no_dns_listeners")
+    recommendations+=("restart_pihole_ftl")
+  }
 
   cat <<EOF
 {
@@ -298,8 +401,9 @@ FTL_DB=""
 for c in /etc/pihole/pihole-FTL.db /run/pihole-FTL.db /var/lib/pihole/pihole-FTL.db; do
   [[ -f "$c" ]] && FTL_DB="$c" && break
 done
-GRAVITY_DB="/etc/pihole/gravity.db"
+# (gravity DB path is queried lazily when needed)
 
+# shellcheck disable=SC2154
 trap 'rc=$?; echo ""; if [[ "$JSON_OUTPUT" == "1" ]]; then output_json 2>/dev/null || true; else summary 2>/dev/null || true; fi; rm -rf "$TMPDIR" 2>/dev/null || true; [[ $rc -ne 0 ]] && echo -e "${RED}Script ended with exit code $rc${NC}"; exit $rc' EXIT
 
 # --------------------------- Run -------------------------------------------
@@ -315,7 +419,7 @@ run_step 00 "🧭" "Kontext: Host & Netz" $'\
   echo "DNS servers (/etc/resolv.conf):"; grep -E "^nameserver" /etc/resolv.conf || true' false true
 
 # 01 – APT
-if (( DO_APT == 1 )); then
+if ((DO_APT == 1)); then
   export DEBIAN_FRONTEND=noninteractive
   run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
   run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
@@ -337,18 +441,18 @@ run_step 24 "🧑‍💻" "Security: Sudo-Konfiguration" "grep -E 'NOPASSWD|ALL'
 run_step 25 "🔐" "Security: SSH-Konfiguration" "grep -E 'PermitRootLogin|PasswordAuthentication' /etc/ssh/sshd_config || true" false true
 run_step 26 "📦" "Security: Ausstehende Updates" "apt list --upgradable 2>/dev/null | grep -v 'Listing' || echo 'Keine Updates verfügbar'" false true
 command -v chkrootkit >/dev/null 2>&1 && run_step 27 "🦠" "Security: chkrootkit" "chkrootkit || true" false true
-command -v rkhunter  >/dev/null 2>&1 && run_step 28 "🦠" "Security: rkhunter"  "rkhunter --check --sk --nocolors || true" false true
-command -v clamscan  >/dev/null 2>&1 && run_step 29 "🦠" "Security: clamav"    "clamscan -r /etc/pihole || true" false true
+command -v rkhunter >/dev/null 2>&1 && run_step 28 "🦠" "Security: rkhunter" "rkhunter --check --sk --nocolors || true" false true
+command -v clamscan >/dev/null 2>&1 && run_step 29 "🦠" "Security: clamav" "clamscan -r /etc/pihole || true" false true
 
 # Logfile-Monitoring
 PIHOLE_LOG="/var/log/pihole.log"
 if [[ -f "$PIHOLE_LOG" ]]; then
   LOGSIZE=$(stat -c %s "$PIHOLE_LOG" 2>/dev/null || echo 0)
-  (( LOGSIZE > 1073741824 )) && echo -e "${YELLOW}WARNUNG: pihole.log > 1GB! Empfehlung: logrotate aktivieren.${NC}"
+  ((LOGSIZE > 1073741824)) && echo -e "${YELLOW}WARNUNG: pihole.log > 1GB! Empfehlung: logrotate aktivieren.${NC}"
 fi
 
 # Backup-Integration (optional)
-if (( DO_BACKUP == 1 )); then
+if ((DO_BACKUP == 1)); then
   BACKUP_DIR="/var/backups/pihole/$(date +%Y%m%d_%H%M%S)"
   MAX_BACKUPS=5
   mkdir -p "$BACKUP_DIR"
@@ -358,18 +462,18 @@ if (( DO_BACKUP == 1 )); then
   echo "Backup gespeichert: $BACKUP_DIR"
   find /var/backups/pihole/ -maxdepth 1 -type d -printf '%T@ %p\n' | sort -n | awk '{print $2}' | head -n -$MAX_BACKUPS | xargs -r rm -rf
 fi
-backup_status="OK"
 backup_pihole() {
-  local backup_dir="/etc/pihole/backup_$(date +%Y%m%d_%H%M%S)"
+  local backup_dir
+  backup_dir="/etc/pihole/backup_$(date +%Y%m%d_%H%M%S)"
   mkdir -p "$backup_dir"
-  cp -a /etc/pihole/*.db "$backup_dir" 2>/dev/null || backup_status="WARN"
-  cp -a /etc/pihole/*.conf "$backup_dir" 2>/dev/null || backup_status="WARN"
+  cp -a /etc/pihole/*.db "$backup_dir" 2>/dev/null || true
+  cp -a /etc/pihole/*.conf "$backup_dir" 2>/dev/null || true
   echo "Backup erstellt: $backup_dir"
 }
 
 # 03 – Pi-hole Version & Updates
 run_step 03 "🔎" "Pi-hole Version" "ph -v" false true
-if (( DO_UPGRADE == 1 )); then
+if ((DO_UPGRADE == 1)); then
   backup_pihole
   run_step 04 "🆙" "Pi-hole self-update" "ph -up"
 else
@@ -377,7 +481,7 @@ else
 fi
 
 # 05 – Gravity
-if (( DO_GRAVITY == 1 )); then
+if ((DO_GRAVITY == 1)); then
   backup_pihole
   run_step 05 "📋" "Update Gravity / Blocklists" "ph -g"
 else
@@ -385,7 +489,7 @@ else
 fi
 
 # 06 – DNS reload
-if (( DO_DNSRELOAD == 1 )); then
+if ((DO_DNSRELOAD == 1)); then
   run_step 06 "🔁" "Reload DNS (reloaddns)" "ph reloaddns"
 else
   echo -e "${YELLOW}DNS-Reload übersprungen (--no-dnsreload).${NC}"
@@ -394,7 +498,7 @@ fi
 # 07 – Health
 run_step 07 "🧪" "Health: Port 53 listeners" "ss -lntup | awk '/:53[[:space:]]/ {print}' || true" false true
 run_step 08 "🌐" "DNS Test: google.com @127.0.0.1" $'dig +time=2 +tries=1 +short google.com @127.0.0.1 || true' false true
-run_step 09 "🏠" "DNS Test: pi.hole @127.0.0.1"  $'dig +time=2 +tries=1 +short pi.hole @127.0.0.1 || true'  false true
+run_step 09 "🏠" "DNS Test: pi.hole @127.0.0.1" $'dig +time=2 +tries=1 +short pi.hole @127.0.0.1 || true' false true
 
 # 10 – GitHub Reachability
 run_step 10 "🐙" "GitHub Reachability" $'\
@@ -427,7 +531,8 @@ if [[ "${RUN_SELFTEST:-0}" == "1" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   TEST_SCRIPT="${SCRIPT_DIR}/scripts/test-repo.sh"
   if [[ -f "$TEST_SCRIPT" ]]; then
-    echo "Führe Repository-Selftest aus..."; bash "$TEST_SCRIPT" || echo "Selftest fehlgeschlagen"
+    echo "Führe Repository-Selftest aus..."
+    bash "$TEST_SCRIPT" || echo "Selftest fehlgeschlagen"
   else
     echo "Selftest übersprungen (scripts/test-repo.sh nicht gefunden)"
   fi
