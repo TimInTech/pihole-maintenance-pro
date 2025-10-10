@@ -3,6 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/TimInTech/pihole-maintenance-pro/ci-sanity.yml?branch=main)](https://github.com/TimInTech/pihole-maintenance-pro/actions)
 [![License](https://img.shields.io/github/license/TimInTech/pihole-maintenance-pro)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Donate-ffdd00?logo=buymeacoffee&logoColor=000&labelColor=fff)](https://buymeacoffee.com/timintech)
 
 <img src="https://skillicons.dev/icons?i=bash,linux" alt="Tech" />
 
@@ -27,6 +28,31 @@ Automated Pi-hole v6 maintenance script for Raspberry Pi OS (Bookworm/Trixie) wi
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
 ```
+
+<!-- UNINSTALL:BEGIN -->
+## Update / Overwrite (safe re-install)
+
+Use this to pull and overwrite with the latest release:
+`bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/install.sh)"
+`
+
+## Uninstall (clean removal)
+`bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TimInTech/pihole-maintenance-pro/main/scripts/uninstall.sh)"
+`
+
+> These commands are idempotent: *Update* always replaces the installed script; *Uninstall* removes the script, logs, temp data, and the cron entry.
+<!-- UNINSTALL:END -->
+
+### Flags
+
+- `--no-apt` – skips APT steps (update/upgrade/autoremove/autoclean)  
+- `--no-upgrade` – does **not** run `pihole -up`  
+- `--no-gravity` – skips `pihole -g` (blocklists/Gravity update)  
+- `--no-dnsreload` – skips `pihole reloaddns`  
+- `--backup` – creates a backup before Pi-hole ops under `/var/backups/pihole/`  
+- `--json` – outputs machine-readable JSON instead of the colored TUI
 
 **Manual installation:**
 
@@ -78,3 +104,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MIT. See [LICENSE](LICENSE).
 
 *Last updated: 2025-10-10 • Version: 5.3.2*
+
+## Support
+If this project helps you, you can support it here:
+[buymeacoffee.com/timintech](https://buymeacoffee.com/timintech)
