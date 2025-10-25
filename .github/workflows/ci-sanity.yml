@@ -31,4 +31,4 @@ jobs:
           RUN_SELFTEST: "1"
         run: |
           bash -n pihole_maintenance_pro.sh
-          sudo ./pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
+          sudo --preserve-env=CI,RUN_SELFTEST ./pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
