@@ -15,12 +15,12 @@ if [[ -f /usr/local/bin/pihole_maintenance_pro.sh ]]; then
 fi
 
 # 2. Remove logs and temporary files
-sudo rm -f /var/log/pihole_maintenance_pro_*.log 2> /dev/null || true
-sudo rm -rf /tmp/pihole_maint_* 2> /dev/null || true
+sudo rm -f /var/log/pihole_maintenance_pro_*.log 2>/dev/null || true
+sudo rm -rf /tmp/pihole_maint_* 2>/dev/null || true
 echo "✔ Logs removed"
 
 # 3. Clean up cronjob
-if crontab -l 2> /dev/null | grep -q "pihole_maintenance_pro.sh"; then
+if crontab -l 2>/dev/null | grep -q "pihole_maintenance_pro.sh"; then
   (crontab -l | grep -v "pihole_maintenance_pro.sh") | crontab -
   echo "✔ Cronjob removed"
 else
