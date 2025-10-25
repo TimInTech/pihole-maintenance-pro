@@ -415,11 +415,11 @@ on_exit() {
   local rc="$1"
   echo ""
   if [[ "$JSON_OUTPUT" == "1" ]]; then
-    output_json 2>/dev/null || true
+    output_json 2> /dev/null || true
   else
-    summary 2>/dev/null || true
+    summary 2> /dev/null || true
   fi
-  rm -rf "$TMPDIR" 2>/dev/null || true
+  rm -rf "$TMPDIR" 2> /dev/null || true
   [[ $rc -ne 0 ]] && echo -e "${RED}Script ended with exit code $rc${NC}"
   exit "$rc"
 }

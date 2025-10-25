@@ -17,7 +17,7 @@ FTL_DB_PATH="/etc/pihole/pihole-FTL.db"
 JSON_OUTPUT=0
 
 usage() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: pihole_api_healthcheck.sh [--json]
 
 Collects local Pi-hole health metrics (CLI, FTL, DNS listeners, sqlite3 stats,
@@ -59,7 +59,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-hostname_value="$(hostname 2>/dev/null || uname -n || echo 'unknown')"
+hostname_value="$(hostname 2> /dev/null || uname -n || echo 'unknown')"
 hostname_value="${hostname_value%%$'\n'*}"
 
 ipv4_address="unknown"
@@ -67,13 +67,13 @@ if command -v ip > /dev/null 2>&1; then
   while IFS= read -r addr; do
     ipv4_address="${addr%%/*}"
     [[ -n "$ipv4_address" ]] && break
-  done < <(ip -o -4 addr show scope global 2>/dev/null | awk '{print $4}' || true)
+  done < <(ip -o -4 addr show scope global 2> /dev/null | awk '{print $4}' || true)
 fi
 if [[ "$ipv4_address" == "unknown" ]]; then
   if command -v hostname > /dev/null 2>&1; then
-    addr_line="$(hostname -I 2>/dev/null || true)"
+    addr_line="$(hostname -I 2> /dev/null || true)"
     if [[ -n "$addr_line" ]]; then
-      ipv4_address="$(tr ' ' '\n' <<<"$addr_line" | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+      ipv4_address="$(tr ' ' '\n' <<< "$addr_line" | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)"
       [[ -z "$ipv4_address" ]] && ipv4_address="unknown"
     fi
   fi
@@ -98,9 +98,9 @@ blocking_status="UNKNOWN"
 pihole_status_output=""
 if command -v pihole > /dev/null 2>&1; then
   pihole_status_output="$(pihole status 2>&1 || true)"
-  if grep -qi 'enabled' <<<"$pihole_status_output"; then
+  if grep -qi 'enabled' <<< "$pihole_status_output"; then
     blocking_status="ENABLED"
-  elif grep -qi 'disabled' <<<"$pihole_status_output"; then
+  elif grep -qi 'disabled' <<< "$pihole_status_output"; then
     blocking_status="DISABLED"
   else
     blocking_status="UNKNOWN"
@@ -115,7 +115,7 @@ dns_tcp_v4="null"
 check_socket() {
   local proto="$1" pattern="$2"
   if command -v ss > /dev/null 2>&1; then
-    if ss "-${proto}"ln 2>/dev/null | grep -qE "$pattern"; then
+    if ss "-${proto}"ln 2> /dev/null | grep -qE "$pattern"; then
       echo "true"
       return
     fi
@@ -123,7 +123,7 @@ check_socket() {
     return
   fi
   if command -v netstat > /dev/null 2>&1; then
-    if netstat "-${proto}"ln 2>/dev/null | grep -qE "$pattern"; then
+    if netstat "-${proto}"ln 2> /dev/null | grep -qE "$pattern"; then
       echo "true"
       return
     fi
@@ -155,13 +155,13 @@ if command -v sqlite3 > /dev/null 2>&1; then
       GROUP BY client
       ORDER BY total DESC
       LIMIT 5;
-    " 2>/dev/null || true)"
+    " 2> /dev/null || true)"
     if [[ -n "$top_clients_raw" ]]; then
       while IFS='|' read -r client count; do
         [[ -z "$client" ]] && continue
         [[ -z "$count" ]] && continue
         TOP_CLIENTS_LOCAL+=("$client|$count")
-      done <<<"$top_clients_raw"
+      done <<< "$top_clients_raw"
     fi
 
     totals_raw="$(sqlite3 -readonly "$FTL_DB_PATH" "
@@ -178,7 +178,7 @@ if command -v sqlite3 > /dev/null 2>&1; then
           END
         ) AS blocked
       FROM recent;
-    " 2>/dev/null || true)"
+    " 2> /dev/null || true)"
     if [[ "$totals_raw" =~ ^([0-9]+)\|([0-9]+)$ ]]; then
       traffic_total_24h="${BASH_REMATCH[1]}"
       traffic_blocked_24h="${BASH_REMATCH[2]}"
@@ -206,7 +206,7 @@ if [[ -r /sys/class/thermal/thermal_zone0/temp ]]; then
     cpu_temp_c="$(awk -v val="$raw_temp" 'BEGIN { printf "%.1f", val / 1000 }')"
   fi
 elif command -v vcgencmd > /dev/null 2>&1; then
-  vcgencmd_out="$(vcgencmd measure_temp 2>/dev/null || true)"
+  vcgencmd_out="$(vcgencmd measure_temp 2> /dev/null || true)"
   if [[ "$vcgencmd_out" =~ temp=([0-9]+(\.[0-9]+)?)\'C ]]; then
     cpu_temp_c="${BASH_REMATCH[1]}"
   fi
@@ -216,7 +216,7 @@ load_avg=""
 if [[ -r /proc/loadavg ]]; then
   load_avg="$(awk '{printf "%s,%s,%s", $1, $2, $3}' /proc/loadavg)"
 else
-  load_avg="$(uptime 2>/dev/null || echo "unknown")"
+  load_avg="$(uptime 2> /dev/null || echo "unknown")"
 fi
 
 ram_used_pct=""
@@ -229,29 +229,22 @@ if command -v df > /dev/null 2>&1; then
   disk_used_pct="$(df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}')"
 fi
 
-<<<<<<< HEAD
-=======
 uptime_summary=""
 if command -v uptime > /dev/null 2>&1; then
-  uptime_summary="$(uptime -p 2>/dev/null || uptime 2>/dev/null || echo 'unknown')"
+  uptime_summary="$(uptime -p 2> /dev/null || uptime 2> /dev/null || echo 'unknown')"
   uptime_summary="${uptime_summary//$'\n'/}"
 fi
 
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 cli_password=""
 if [[ -r "$CLI_PW_PATH" ]]; then
   cli_password="$(tr -d '\r\n' < "$CLI_PW_PATH")"
 fi
 
 api_url="${PIHOLE_API_URL:-}"
-<<<<<<< HEAD
-api_note=""
-=======
 [[ -n "$api_url" ]] && api_url="${api_url%/}"
 api_status="API not queried (PIHOLE_API_URL unset)"
 api_used_basic_auth="false"
 api_context=0
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 api_summary_body=""
 api_summary_http=""
 api_summary_note=""
@@ -262,10 +255,7 @@ declare -a TOP_CLIENTS_API=()
 api_total_override=""
 api_blocked_override=""
 api_percent_override=""
-<<<<<<< HEAD
-=======
 auth_token=""
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 
 call_api_endpoint() {
   local endpoint="$1" body_ref="$2" code_ref="$3" note_ref="$4"
@@ -276,11 +266,11 @@ call_api_endpoint() {
   TMP_FILES+=("$tmp_body" "$tmp_code" "$tmp_err")
 
   if ! curl -sS -m 7 \
-      -H "Authorization: Basic $auth_token" \
-      -H "Accept: application/json" \
-      -o "$tmp_body" \
-      -w '%{http_code}' \
-      "$api_url/$endpoint" > "$tmp_code" 2>"$tmp_err"; then
+    -H "Authorization: Basic $auth_token" \
+    -H "Accept: application/json" \
+    -o "$tmp_body" \
+    -w '%{http_code}' \
+    "$api_url/$endpoint" > "$tmp_code" 2> "$tmp_err"; then
     printf -v "$body_ref" ""
     printf -v "$code_ref" "000"
     local err_msg
@@ -298,21 +288,6 @@ call_api_endpoint() {
 
 if [[ -n "$api_url" ]]; then
   if [[ -z "$cli_password" ]]; then
-<<<<<<< HEAD
-    api_note="PIHOLE_API_URL set but $CLI_PW_PATH not readable"
-  elif ! command -v curl > /dev/null 2>&1; then
-    api_note="curl not installed; skipping API calls"
-  elif ! command -v base64 > /dev/null 2>&1; then
-    api_note="base64 not installed; skipping API calls"
-  else
-    auth_token="$(printf 'cli:%s' "$cli_password" | base64 | tr -d $'\n')"
-    api_note="API mode enabled"
-    call_api_endpoint "stats/summary" api_summary_body api_summary_http api_summary_note
-    call_api_endpoint "stats/top_clients" api_top_clients_body api_top_clients_http api_top_clients_note
-  fi
-else
-  api_note="API not queried (PIHOLE_API_URL unset)"
-=======
     api_status="PIHOLE_API_URL set but $CLI_PW_PATH not readable"
   elif ! command -v curl > /dev/null 2>&1; then
     api_status="curl not installed; skipping API calls"
@@ -330,7 +305,6 @@ else
       api_status="API query attempted with Basic Auth (check endpoint details)"
     fi
   fi
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 fi
 
 if [[ "$api_summary_http" == "404" ]]; then
@@ -342,7 +316,8 @@ fi
 
 if [[ "$api_summary_http" == "200" && -n "$api_summary_body" ]]; then
   if command -v python3 > /dev/null 2>&1; then
-    api_summary_parsed="$(SUMMARY_INPUT="$api_summary_body" python3 - <<'PY'
+    api_summary_parsed="$(
+      SUMMARY_INPUT="$api_summary_body" python3 - << 'PY'
 import os, json
 data = os.environ.get("SUMMARY_INPUT", "")
 if not data:
@@ -394,16 +369,17 @@ for value in (total, blocked, percent):
         parts.append(str(value))
 print("|".join(parts))
 PY
-)"
+    )"
     if [[ -n "$api_summary_parsed" ]]; then
-      IFS='|' read -r api_total_override api_blocked_override api_percent_override <<<"$api_summary_parsed"
+      IFS='|' read -r api_total_override api_blocked_override api_percent_override <<< "$api_summary_parsed"
     fi
   fi
 fi
 
 if [[ "$api_top_clients_http" == "200" && -n "$api_top_clients_body" ]]; then
   if command -v python3 > /dev/null 2>&1; then
-    api_top_clients_parsed="$(TOP_CLIENTS_INPUT="$api_top_clients_body" python3 - <<'PY'
+    api_top_clients_parsed="$(
+      TOP_CLIENTS_INPUT="$api_top_clients_body" python3 - << 'PY'
 import os, json
 data = os.environ.get("TOP_CLIENTS_INPUT", "")
 if not data:
@@ -448,13 +424,13 @@ for item in clients:
     lines.append(f"{client}|{int(count_value)}")
 print("\n".join(lines[:5]))
 PY
-)"
+    )"
     if [[ -n "$api_top_clients_parsed" ]]; then
       while IFS='|' read -r client count; do
         [[ -z "$client" ]] && continue
         [[ -z "$count" ]] && continue
         TOP_CLIENTS_API+=("$client|$count")
-      done <<<"$api_top_clients_parsed"
+      done <<< "$api_top_clients_parsed"
     fi
   fi
 fi
@@ -470,20 +446,20 @@ elif ((${#TOP_CLIENTS_LOCAL[@]} > 0)); then
 fi
 
 if [[ -n "$api_total_override" ]]; then
-  traffic_total_24h="$(printf "%.0f" "$api_total_override" 2>/dev/null || echo "$api_total_override")"
+  traffic_total_24h="$(printf "%.0f" "$api_total_override" 2> /dev/null || echo "$api_total_override")"
 fi
 if [[ -n "$api_blocked_override" ]]; then
-  traffic_blocked_24h="$(printf "%.0f" "$api_blocked_override" 2>/dev/null || echo "$api_blocked_override")"
+  traffic_blocked_24h="$(printf "%.0f" "$api_blocked_override" 2> /dev/null || echo "$api_blocked_override")"
 fi
 if [[ -n "$api_percent_override" ]]; then
-  traffic_blocked_percent="$(awk -v p="$api_percent_override" 'BEGIN { printf "%.1f", p }' 2>/dev/null || echo "$api_percent_override")"
+  traffic_blocked_percent="$(awk -v p="$api_percent_override" 'BEGIN { printf "%.1f", p }' 2> /dev/null || echo "$api_percent_override")"
 fi
 
 human_bool() {
   case "$1" in
-    true) echo "OK";;
-    false) echo "NOT LISTENING";;
-    *) echo "UNKNOWN";;
+    true) echo "OK" ;;
+    false) echo "NOT LISTENING" ;;
+    *) echo "UNKNOWN" ;;
   esac
 }
 
@@ -531,21 +507,14 @@ print_text() {
   fi
   echo
   echo "[System]"
-<<<<<<< HEAD
-=======
   [[ -n "$uptime_summary" ]] && echo "  Uptime            : ${uptime_summary}"
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
   [[ -n "$cpu_temp_c" ]] && echo "  CPU temperature   : ${cpu_temp_c}°C"
   [[ -n "$load_avg" ]] && echo "  Load average      : ${load_avg}"
   [[ -n "$ram_used_pct" ]] && echo "  RAM used          : ${ram_used_pct}%"
   [[ -n "$disk_used_pct" ]] && echo "  Disk used (/)     : ${disk_used_pct}%"
   echo
   echo "[API]"
-<<<<<<< HEAD
-  echo "  Status            : $api_note"
-=======
   echo "  Status            : $api_status"
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
   if [[ -n "$api_summary_http" ]]; then
     echo "  Summary endpoint  : HTTP ${api_summary_http}${api_summary_note:+ ($api_summary_note)}"
   fi
@@ -566,10 +535,10 @@ json_escape() {
 
 json_bool_or_null() {
   case "$1" in
-    true) echo -n "true";;
-    false) echo -n "false";;
-    null|"") echo -n "null";;
-    *) echo -n "null";;
+    true) echo -n "true" ;;
+    false) echo -n "false" ;;
+    null | "") echo -n "null" ;;
+    *) echo -n "null" ;;
   esac
 }
 
@@ -588,8 +557,6 @@ json_number_or_null() {
   fi
 }
 
-<<<<<<< HEAD
-=======
 json_http_code_or_null() {
   local code="$1"
   if [[ "$code" =~ ^[0-9]{3}$ && "$code" != "000" ]]; then
@@ -608,7 +575,6 @@ json_string_or_null() {
   fi
 }
 
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 print_json() {
   printf '{'
   printf '"timestamp":"%s",' "$(json_escape "$timestamp")"
@@ -634,7 +600,7 @@ print_json() {
       if ! is_number "$count"; then
         continue
       fi
-      if (( first )); then
+      if ((first)); then
         first=0
       else
         printf ','
@@ -643,10 +609,7 @@ print_json() {
     done
   fi
   printf '],'
-<<<<<<< HEAD
-  printf '"notes":{"traffic":"%s","api":"%s"}' "$(json_escape "$traffic_note")" "$(json_escape "$api_note")"
-=======
-  if (( api_context )); then
+  if ((api_context)); then
     printf '"api":{'
     printf '"url":"%s",' "$(json_escape "$api_url")"
     printf '"status":"%s",' "$(json_escape "$api_status")"
@@ -666,11 +629,10 @@ print_json() {
     printf 'null'
   fi
   printf ',"api":"%s"}' "$(json_escape "$api_status")"
->>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
   printf '}\n'
 }
 
-if (( JSON_OUTPUT )); then
+if ((JSON_OUTPUT)); then
   print_json
 else
   print_text
