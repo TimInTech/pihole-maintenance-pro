@@ -456,7 +456,7 @@ run_step 20 "🔒" "Security: Offene Ports" "ss -tuln | grep -E '(:22|:80|:443|:
 run_step 21 "🛡️" "Security: SSH Login Attempts" "lastb -i | head -n 10 || true" false true
 # 22 – awk-Programm strikt in Single-Quotes, damit $2 nicht von Bash expandiert
 run_step 22 "🔑" "Security: Schwache Passwörter (shadow)" "awk -F: '(\$2==\"\"||\$2==\"*\"||\$2==\"!\") {print \$1}' /etc/shadow || true" false true
-run_step 23 "🕸️" "Security: Pi-hole Admin Interface" "ss -tuln | grep ':80' | grep 'LISTEN' && grep -q 'WEBPASSWORD' /etc/pihole/setupVars.conf && echo 'Admin-Interface aktiv' || echo 'Admin-Interface nicht gefunden'" false true
+run_step 23 "🕸️" "Security: Pi-hole Admin Interface" "ss -tuln | grep ':80' | grep 'LISTEN' && grep -q 'webserver' /etc/pihole/pihole.toml && echo 'Admin interface active (detected via pihole.toml)' || echo 'Admin interface not detected'" false true
 run_step 24 "🧑‍💻" "Security: Sudo-Konfiguration" "grep -E 'NOPASSWD|ALL' /etc/sudoers /etc/sudoers.d/* 2>/dev/null || echo 'Sudo-Konfiguration OK'" false true
 run_step 25 "🔐" "Security: SSH-Konfiguration" "grep -E 'PermitRootLogin|PasswordAuthentication' /etc/ssh/sshd_config || true" false true
 run_step 26 "📦" "Security: Ausstehende Updates" "apt list --upgradable 2>/dev/null | grep -v 'Listing' || echo 'Keine Updates verfügbar'" false true

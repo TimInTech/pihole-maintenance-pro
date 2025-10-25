@@ -75,14 +75,24 @@ sudo /usr/local/bin/pihole_maintenance_pro.sh
 sudo /usr/local/bin/pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
 ```
 
-**Cron example (Sunday 04:00):**
+**Recommended cron jobs:**
 
 ```cron
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1
+*/30 * * * * /usr/local/bin/pihole_api_healthcheck.sh >> /var/log/pihole_healthcheck.log 2>&1
+30 3 * * * /usr/local/bin/pihole_maintenance_pro.sh >> /var/log/pihole_maintenance_pro.log 2>&1
 ```
 
-> Trixie/Cron uses reduced PATH. Script auto-detects `pihole`, full PATH in cron avoids surprises.
+> Trixie/Cron uses a reduced PATH. Defining the full PATH keeps both scripts working reliably.
+
+## Pi-hole v6 API notes
+
+- No `setupVars.conf` anymore
+- Configuration lives in `/etc/pihole/pihole.toml`
+- API is served from `/api`, not `/api.php`
+- Authentication uses HTTP Basic Auth (`cli` user + `/etc/pihole/cli_pw`)
+- Example tooling: `tools/pihole_api_healthcheck.sh`
+- `unbound` is not required
 
 ## Troubleshooting
 
