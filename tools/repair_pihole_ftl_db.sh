@@ -14,13 +14,13 @@ if [ ! -f "$DB_PATH" ]; then
   exit 1
 fi
 
-if ! command -v sqlite3 >/dev/null 2>&1; then
+if ! command -v sqlite3 > /dev/null 2>&1; then
   echo "✗ sqlite3 fehlt. Installiere mit: sudo apt update && sudo apt install -y sqlite3" >&2
   exit 2
 fi
 
 echo "✔ DB gefunden. Prüfe Tabellenstruktur ..."
-if ! sudo sqlite3 -readonly "$DB_PATH" "SELECT count(*) FROM queries LIMIT 1;" >/dev/null 2>&1; then
+if ! sudo sqlite3 -readonly "$DB_PATH" "SELECT count(*) FROM queries LIMIT 1;" > /dev/null 2>&1; then
   echo "✗ Tabelle queries fehlt/beschädigt."
   echo "➜ Backup: $BACKUP_PATH"
   sudo cp "$DB_PATH" "$BACKUP_PATH"
@@ -28,7 +28,7 @@ if ! sudo sqlite3 -readonly "$DB_PATH" "SELECT count(*) FROM queries LIMIT 1;" >
   sudo rm -f "$DB_PATH"
   sudo systemctl restart pihole-FTL
   echo "✔ FTL neu gestartet. Verifiziere DB erneut ..."
-  if sudo sqlite3 -readonly "$DB_PATH" "SELECT count(*) FROM queries LIMIT 1;" >/dev/null 2>&1; then
+  if sudo sqlite3 -readonly "$DB_PATH" "SELECT count(*) FROM queries LIMIT 1;" > /dev/null 2>&1; then
     echo "✔ Tabelle queries vorhanden. Reparatur erfolgreich."
   else
     echo "⚠ Tabelle weiterhin fehlend. Prüfe Pi-hole-Version und /var/log/pihole-FTL.log." >&2
