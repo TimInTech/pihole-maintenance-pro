@@ -17,7 +17,7 @@ FTL_DB_PATH="/etc/pihole/pihole-FTL.db"
 JSON_OUTPUT=0
 
 usage() {
-  cat << 'EOF'
+  cat <<'EOF'
 Usage: pihole_api_healthcheck.sh [--json]
 
 Collects local Pi-hole health metrics (CLI, FTL, DNS listeners, sqlite3 stats,
@@ -59,21 +59,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-hostname_value="$(hostname 2> /dev/null || uname -n || echo 'unknown')"
+hostname_value="$(hostname 2>/dev/null || uname -n || echo 'unknown')"
 hostname_value="${hostname_value%%$'\n'*}"
 
 ipv4_address="unknown"
-if command -v ip > /dev/null 2>&1; then
+if command -v ip >/dev/null 2>&1; then
   while IFS= read -r addr; do
     ipv4_address="${addr%%/*}"
     [[ -n "$ipv4_address" ]] && break
-  done < <(ip -o -4 addr show scope global 2> /dev/null | awk '{print $4}' || true)
+  done < <(ip -o -4 addr show scope global 2>/dev/null | awk '{print $4}' || true)
 fi
 if [[ "$ipv4_address" == "unknown" ]]; then
-  if command -v hostname > /dev/null 2>&1; then
-    addr_line="$(hostname -I 2> /dev/null || true)"
+  if command -v hostname >/dev/null 2>&1; then
+    addr_line="$(hostname -I 2>/dev/null || true)"
     if [[ -n "$addr_line" ]]; then
-      ipv4_address="$(tr ' ' '\n' <<< "$addr_line" | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+      ipv4_address="$(tr ' ' '\n' <<<"$addr_line" | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)"
       [[ -z "$ipv4_address" ]] && ipv4_address="unknown"
     fi
   fi
@@ -82,7 +82,7 @@ fi
 
 ftl_service_state="unknown"
 ftl_active_state="null"
-if command -v systemctl > /dev/null 2>&1; then
+if command -v systemctl >/dev/null 2>&1; then
   ftl_output="$(systemctl is-active pihole-FTL 2>&1 || true)"
   ftl_service_state="$ftl_output"
   if [[ "$ftl_output" == "active" ]]; then
@@ -96,11 +96,11 @@ fi
 
 blocking_status="UNKNOWN"
 pihole_status_output=""
-if command -v pihole > /dev/null 2>&1; then
+if command -v pihole >/dev/null 2>&1; then
   pihole_status_output="$(pihole status 2>&1 || true)"
-  if grep -qi 'enabled' <<< "$pihole_status_output"; then
+  if grep -qi 'enabled' <<<"$pihole_status_output"; then
     blocking_status="ENABLED"
-  elif grep -qi 'disabled' <<< "$pihole_status_output"; then
+  elif grep -qi 'disabled' <<<"$pihole_status_output"; then
     blocking_status="DISABLED"
   else
     blocking_status="UNKNOWN"
@@ -114,16 +114,16 @@ dns_tcp_v4="null"
 
 check_socket() {
   local proto="$1" pattern="$2"
-  if command -v ss > /dev/null 2>&1; then
-    if ss "-${proto}"ln 2> /dev/null | grep -qE "$pattern"; then
+  if command -v ss >/dev/null 2>&1; then
+    if ss "-${proto}"ln 2>/dev/null | grep -qE "$pattern"; then
       echo "true"
       return
     fi
     echo "false"
     return
   fi
-  if command -v netstat > /dev/null 2>&1; then
-    if netstat "-${proto}"ln 2> /dev/null | grep -qE "$pattern"; then
+  if command -v netstat >/dev/null 2>&1; then
+    if netstat "-${proto}"ln 2>/dev/null | grep -qE "$pattern"; then
       echo "true"
       return
     fi
@@ -146,7 +146,7 @@ traffic_note=""
 top_clients_note=""
 declare -a TOP_CLIENTS_LOCAL=()
 
-if command -v sqlite3 > /dev/null 2>&1; then
+if command -v sqlite3 >/dev/null 2>&1; then
   if [[ -r "$FTL_DB_PATH" ]]; then
     top_clients_raw="$(sqlite3 -readonly "$FTL_DB_PATH" "
       SELECT COALESCE(client,'unknown'), COUNT(*) AS total
@@ -155,13 +155,13 @@ if command -v sqlite3 > /dev/null 2>&1; then
       GROUP BY client
       ORDER BY total DESC
       LIMIT 5;
-    " 2> /dev/null || true)"
+    " 2>/dev/null || true)"
     if [[ -n "$top_clients_raw" ]]; then
       while IFS='|' read -r client count; do
         [[ -z "$client" ]] && continue
         [[ -z "$count" ]] && continue
         TOP_CLIENTS_LOCAL+=("$client|$count")
-      done <<< "$top_clients_raw"
+      done <<<"$top_clients_raw"
     fi
 
     totals_raw="$(sqlite3 -readonly "$FTL_DB_PATH" "
@@ -178,7 +178,7 @@ if command -v sqlite3 > /dev/null 2>&1; then
           END
         ) AS blocked
       FROM recent;
-    " 2> /dev/null || true)"
+    " 2>/dev/null || true)"
     if [[ "$totals_raw" =~ ^([0-9]+)\|([0-9]+)$ ]]; then
       traffic_total_24h="${BASH_REMATCH[1]}"
       traffic_blocked_24h="${BASH_REMATCH[2]}"
@@ -201,12 +201,12 @@ fi
 
 cpu_temp_c=""
 if [[ -r /sys/class/thermal/thermal_zone0/temp ]]; then
-  raw_temp="$(< /sys/class/thermal/thermal_zone0/temp)"
+  raw_temp="$(</sys/class/thermal/thermal_zone0/temp)"
   if [[ "$raw_temp" =~ ^[0-9]+$ ]]; then
     cpu_temp_c="$(awk -v val="$raw_temp" 'BEGIN { printf "%.1f", val / 1000 }')"
   fi
-elif command -v vcgencmd > /dev/null 2>&1; then
-  vcgencmd_out="$(vcgencmd measure_temp 2> /dev/null || true)"
+elif command -v vcgencmd >/dev/null 2>&1; then
+  vcgencmd_out="$(vcgencmd measure_temp 2>/dev/null || true)"
   if [[ "$vcgencmd_out" =~ temp=([0-9]+(\.[0-9]+)?)\'C ]]; then
     cpu_temp_c="${BASH_REMATCH[1]}"
   fi
@@ -216,28 +216,28 @@ load_avg=""
 if [[ -r /proc/loadavg ]]; then
   load_avg="$(awk '{printf "%s,%s,%s", $1, $2, $3}' /proc/loadavg)"
 else
-  load_avg="$(uptime 2> /dev/null || echo "unknown")"
+  load_avg="$(uptime 2>/dev/null || echo "unknown")"
 fi
 
 ram_used_pct=""
-if command -v free > /dev/null 2>&1; then
+if command -v free >/dev/null 2>&1; then
   ram_used_pct="$(free -m | awk '/Mem:/ { if ($2 > 0) printf "%.0f", ($3/$2)*100 }')"
 fi
 
 disk_used_pct=""
-if command -v df > /dev/null 2>&1; then
+if command -v df >/dev/null 2>&1; then
   disk_used_pct="$(df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}')"
 fi
 
 uptime_summary=""
-if command -v uptime > /dev/null 2>&1; then
-  uptime_summary="$(uptime -p 2> /dev/null || uptime 2> /dev/null || echo 'unknown')"
+if command -v uptime >/dev/null 2>&1; then
+  uptime_summary="$(uptime -p 2>/dev/null || uptime 2>/dev/null || echo 'unknown')"
   uptime_summary="${uptime_summary//$'\n'/}"
 fi
 
 cli_password=""
 if [[ -r "$CLI_PW_PATH" ]]; then
-  cli_password="$(tr -d '\r\n' < "$CLI_PW_PATH")"
+  cli_password="$(tr -d '\r\n' <"$CLI_PW_PATH")"
 fi
 
 api_url="${PIHOLE_API_URL:-}"
@@ -270,11 +270,11 @@ call_api_endpoint() {
     -H "Accept: application/json" \
     -o "$tmp_body" \
     -w '%{http_code}' \
-    "$api_url/$endpoint" > "$tmp_code" 2> "$tmp_err"; then
+    "$api_url/$endpoint" >"$tmp_code" 2>"$tmp_err"; then
     printf -v "$body_ref" ""
     printf -v "$code_ref" "000"
     local err_msg
-    err_msg="$(tr '\n' ' ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g')"
+    err_msg="$(tr '\n' ' ' <"$tmp_err" | sed 's/[[:space:]]\+/ /g')"
     printf -v "$note_ref" "curl failed: %s" "$err_msg"
     return
   fi
@@ -282,16 +282,16 @@ call_api_endpoint() {
   printf -v "$body_ref" "%s" "$(cat "$tmp_body")"
   printf -v "$code_ref" "%s" "$(cat "$tmp_code")"
   local err_content
-  err_content="$(tr '\n' ' ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g')"
+  err_content="$(tr '\n' ' ' <"$tmp_err" | sed 's/[[:space:]]\+/ /g')"
   printf -v "$note_ref" "%s" "$err_content"
 }
 
 if [[ -n "$api_url" ]]; then
   if [[ -z "$cli_password" ]]; then
     api_status="PIHOLE_API_URL set but $CLI_PW_PATH not readable"
-  elif ! command -v curl > /dev/null 2>&1; then
+  elif ! command -v curl >/dev/null 2>&1; then
     api_status="curl not installed; skipping API calls"
-  elif ! command -v base64 > /dev/null 2>&1; then
+  elif ! command -v base64 >/dev/null 2>&1; then
     api_status="base64 not installed; skipping API calls"
   else
     auth_token="$(printf 'cli:%s' "$cli_password" | base64 | tr -d $'\n')"
@@ -315,9 +315,9 @@ if [[ "$api_top_clients_http" == "404" ]]; then
 fi
 
 if [[ "$api_summary_http" == "200" && -n "$api_summary_body" ]]; then
-  if command -v python3 > /dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1; then
     api_summary_parsed="$(
-      SUMMARY_INPUT="$api_summary_body" python3 - << 'PY'
+      SUMMARY_INPUT="$api_summary_body" python3 - <<'PY'
 import os, json
 data = os.environ.get("SUMMARY_INPUT", "")
 if not data:
@@ -371,15 +371,15 @@ print("|".join(parts))
 PY
     )"
     if [[ -n "$api_summary_parsed" ]]; then
-      IFS='|' read -r api_total_override api_blocked_override api_percent_override <<< "$api_summary_parsed"
+      IFS='|' read -r api_total_override api_blocked_override api_percent_override <<<"$api_summary_parsed"
     fi
   fi
 fi
 
 if [[ "$api_top_clients_http" == "200" && -n "$api_top_clients_body" ]]; then
-  if command -v python3 > /dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1; then
     api_top_clients_parsed="$(
-      TOP_CLIENTS_INPUT="$api_top_clients_body" python3 - << 'PY'
+      TOP_CLIENTS_INPUT="$api_top_clients_body" python3 - <<'PY'
 import os, json
 data = os.environ.get("TOP_CLIENTS_INPUT", "")
 if not data:
@@ -430,7 +430,7 @@ PY
         [[ -z "$client" ]] && continue
         [[ -z "$count" ]] && continue
         TOP_CLIENTS_API+=("$client|$count")
-      done <<< "$api_top_clients_parsed"
+      done <<<"$api_top_clients_parsed"
     fi
   fi
 fi
@@ -446,13 +446,13 @@ elif ((${#TOP_CLIENTS_LOCAL[@]} > 0)); then
 fi
 
 if [[ -n "$api_total_override" ]]; then
-  traffic_total_24h="$(printf "%.0f" "$api_total_override" 2> /dev/null || echo "$api_total_override")"
+  traffic_total_24h="$(printf "%.0f" "$api_total_override" 2>/dev/null || echo "$api_total_override")"
 fi
 if [[ -n "$api_blocked_override" ]]; then
-  traffic_blocked_24h="$(printf "%.0f" "$api_blocked_override" 2> /dev/null || echo "$api_blocked_override")"
+  traffic_blocked_24h="$(printf "%.0f" "$api_blocked_override" 2>/dev/null || echo "$api_blocked_override")"
 fi
 if [[ -n "$api_percent_override" ]]; then
-  traffic_blocked_percent="$(awk -v p="$api_percent_override" 'BEGIN { printf "%.1f", p }' 2> /dev/null || echo "$api_percent_override")"
+  traffic_blocked_percent="$(awk -v p="$api_percent_override" 'BEGIN { printf "%.1f", p }' 2>/dev/null || echo "$api_percent_override")"
 fi
 
 human_bool() {
