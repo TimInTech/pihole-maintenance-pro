@@ -6,6 +6,7 @@
 #   bash tools/pihole_api_healthcheck.sh
 #   bash tools/pihole_api_healthcheck.sh --json
 #   PIHOLE_API_URL="http://localhost/api" bash tools/pihole_api_healthcheck.sh
+# Note: Works without root, but sqlite3 + cli_pw access may require sudo.
 # ============================================================================
 set -euo pipefail
 IFS=$'\n\t'
@@ -228,13 +229,29 @@ if command -v df > /dev/null 2>&1; then
   disk_used_pct="$(df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}')"
 fi
 
+<<<<<<< HEAD
+=======
+uptime_summary=""
+if command -v uptime > /dev/null 2>&1; then
+  uptime_summary="$(uptime -p 2>/dev/null || uptime 2>/dev/null || echo 'unknown')"
+  uptime_summary="${uptime_summary//$'\n'/}"
+fi
+
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 cli_password=""
 if [[ -r "$CLI_PW_PATH" ]]; then
   cli_password="$(tr -d '\r\n' < "$CLI_PW_PATH")"
 fi
 
 api_url="${PIHOLE_API_URL:-}"
+<<<<<<< HEAD
 api_note=""
+=======
+[[ -n "$api_url" ]] && api_url="${api_url%/}"
+api_status="API not queried (PIHOLE_API_URL unset)"
+api_used_basic_auth="false"
+api_context=0
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 api_summary_body=""
 api_summary_http=""
 api_summary_note=""
@@ -245,6 +262,10 @@ declare -a TOP_CLIENTS_API=()
 api_total_override=""
 api_blocked_override=""
 api_percent_override=""
+<<<<<<< HEAD
+=======
+auth_token=""
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 
 call_api_endpoint() {
   local endpoint="$1" body_ref="$2" code_ref="$3" note_ref="$4"
@@ -277,6 +298,7 @@ call_api_endpoint() {
 
 if [[ -n "$api_url" ]]; then
   if [[ -z "$cli_password" ]]; then
+<<<<<<< HEAD
     api_note="PIHOLE_API_URL set but $CLI_PW_PATH not readable"
   elif ! command -v curl > /dev/null 2>&1; then
     api_note="curl not installed; skipping API calls"
@@ -290,6 +312,25 @@ if [[ -n "$api_url" ]]; then
   fi
 else
   api_note="API not queried (PIHOLE_API_URL unset)"
+=======
+    api_status="PIHOLE_API_URL set but $CLI_PW_PATH not readable"
+  elif ! command -v curl > /dev/null 2>&1; then
+    api_status="curl not installed; skipping API calls"
+  elif ! command -v base64 > /dev/null 2>&1; then
+    api_status="base64 not installed; skipping API calls"
+  else
+    auth_token="$(printf 'cli:%s' "$cli_password" | base64 | tr -d $'\n')"
+    api_used_basic_auth="true"
+    api_context=1
+    call_api_endpoint "stats/summary" api_summary_body api_summary_http api_summary_note
+    call_api_endpoint "stats/top_clients" api_top_clients_body api_top_clients_http api_top_clients_note
+    if [[ "$api_summary_http" == "200" || "$api_top_clients_http" == "200" ]]; then
+      api_status="API queried with Basic Auth"
+    else
+      api_status="API query attempted with Basic Auth (check endpoint details)"
+    fi
+  fi
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 fi
 
 if [[ "$api_summary_http" == "404" ]]; then
@@ -490,13 +531,21 @@ print_text() {
   fi
   echo
   echo "[System]"
+<<<<<<< HEAD
+=======
+  [[ -n "$uptime_summary" ]] && echo "  Uptime            : ${uptime_summary}"
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
   [[ -n "$cpu_temp_c" ]] && echo "  CPU temperature   : ${cpu_temp_c}°C"
   [[ -n "$load_avg" ]] && echo "  Load average      : ${load_avg}"
   [[ -n "$ram_used_pct" ]] && echo "  RAM used          : ${ram_used_pct}%"
   [[ -n "$disk_used_pct" ]] && echo "  Disk used (/)     : ${disk_used_pct}%"
   echo
   echo "[API]"
+<<<<<<< HEAD
   echo "  Status            : $api_note"
+=======
+  echo "  Status            : $api_status"
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
   if [[ -n "$api_summary_http" ]]; then
     echo "  Summary endpoint  : HTTP ${api_summary_http}${api_summary_note:+ ($api_summary_note)}"
   fi
@@ -539,6 +588,27 @@ json_number_or_null() {
   fi
 }
 
+<<<<<<< HEAD
+=======
+json_http_code_or_null() {
+  local code="$1"
+  if [[ "$code" =~ ^[0-9]{3}$ && "$code" != "000" ]]; then
+    echo -n "$code"
+  else
+    echo -n "null"
+  fi
+}
+
+json_string_or_null() {
+  local text="$1"
+  if [[ -z "$text" ]]; then
+    echo -n "null"
+  else
+    printf '"%s"' "$(json_escape "$text")"
+  fi
+}
+
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
 print_json() {
   printf '{'
   printf '"timestamp":"%s",' "$(json_escape "$timestamp")"
@@ -573,7 +643,30 @@ print_json() {
     done
   fi
   printf '],'
+<<<<<<< HEAD
   printf '"notes":{"traffic":"%s","api":"%s"}' "$(json_escape "$traffic_note")" "$(json_escape "$api_note")"
+=======
+  if (( api_context )); then
+    printf '"api":{'
+    printf '"url":"%s",' "$(json_escape "$api_url")"
+    printf '"status":"%s",' "$(json_escape "$api_status")"
+    printf '"used_basic_auth":%s,' "$([[ "$api_used_basic_auth" == "true" ]] && echo "true" || echo "false")"
+    printf '"summary_http_code":%s,' "$(json_http_code_or_null "$api_summary_http")"
+    printf '"summary_error":%s,' "$(json_string_or_null "$api_summary_note")"
+    printf '"top_clients_http_code":%s,' "$(json_http_code_or_null "$api_top_clients_http")"
+    printf '"top_clients_error":%s' "$(json_string_or_null "$api_top_clients_note")"
+    printf '},'
+  else
+    printf '"api":null,'
+  fi
+  printf '"notes":{"traffic":'
+  if [[ -n "$traffic_note" ]]; then
+    printf '"%s"' "$(json_escape "$traffic_note")"
+  else
+    printf 'null'
+  fi
+  printf ',"api":"%s"}' "$(json_escape "$api_status")"
+>>>>>>> 6cc1a47 (feat: add Pi-hole v6 healthcheck, update security step, refresh docs for v6 API)
   printf '}\n'
 }
 

@@ -13,7 +13,7 @@ Cron:
   30 3 * * * /usr/local/bin/pihole_maintenance_pro.sh >> /var/log/pihole_maintenance_pro.log 2>&1
 
 Hinweis:
-  Trixie/Cron nutzt reduzierten PATH. Mit vollem PATH laufen beide Skripte zuverlässig.
+  Trixie/Cron nutzt einen reduzierten PATH. Mit vollem PATH laufen beide Skripte zuverlässig.
 
 Troubleshooting kurz:
 - rfkill → do_wifi_country DE; optional rfkill block wifi
@@ -23,8 +23,8 @@ Troubleshooting kurz:
 
 Pi-hole v6 API:
   - Keine setupVars.conf mehr
-  - Konfiguration in /etc/pihole/pihole.toml
+  - Konfiguration jetzt in /etc/pihole/pihole.toml
   - API unter /api, nicht /api.php
-  - Authentifizierung per Basic Auth (cli + /etc/pihole/cli_pw)
-  - Beispiel: tools/pihole_api_healthcheck.sh
-  - Unbound nicht erforderlich
+  - Authentifizierung via Basic Auth mit User cli und Passwort aus /etc/pihole/cli_pw
+  - Das Healthcheck-Skript pihole_api_healthcheck.sh kann lokal Basic-Auth gegen die API fahren, wenn PIHOLE_API_URL gesetzt ist
+  - Unbound ist nicht erforderlich
