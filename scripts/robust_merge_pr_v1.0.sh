@@ -14,18 +14,18 @@ FEAT="feat/v5.3.1-maintenance-readme"
 echo "ℹ️ Starte robusten PR-Merge für #$PR ($FEAT → $BRANCH)..."
 
 # 0) gh bereitstellen & authentifizieren
-command -v gh >/dev/null || {
+command -v gh > /dev/null || {
   echo "✔️ Installiere GitHub CLI..."
   sudo apt update && sudo apt install -y gh
 }
-gh auth status >/dev/null 2>&1 || gh auth login -p https -h github.com -w
+gh auth status > /dev/null 2>&1 || gh auth login -p https -h github.com -w
 
 # 1) Feature-Branch aktualisieren & robust pushen
 git fetch origin
 git switch "$FEAT" || git checkout -b "$FEAT"
 git rebase origin/"$BRANCH" || true
 
-REMOTE_SHA="$(git rev-parse origin/"$FEAT" 2>/dev/null || echo '')"
+REMOTE_SHA="$(git rev-parse origin/"$FEAT" 2> /dev/null || echo '')"
 LOCAL_SHA="$(git rev-parse HEAD)"
 if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
   echo "➜ Force push: $LOCAL_SHA → $FEAT (Lease gegen $REMOTE_SHA)"
@@ -44,7 +44,7 @@ gh pr merge "$PR" --squash --delete-branch
 
 # 4) Branch Protection minimal erneut aktivieren
 echo "🔒 Reaktiviere Branch-Protection..."
-gh api -X PUT -H "Accept: application/vnd.github+json" repos/$OWNER/$REPO/branches/$BRANCH/protection --input - <<JSON
+gh api -X PUT -H "Accept: application/vnd.github+json" repos/$OWNER/$REPO/branches/$BRANCH/protection --input - << JSON
 {
   "required_status_checks": null,
   "enforce_admins": true,
