@@ -83,16 +83,16 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 30 3 * * * /usr/local/bin/pihole_maintenance_pro.sh >> /var/log/pihole_maintenance_pro.log 2>&1
 ```
 
-> Trixie/Cron uses a reduced PATH. Defining the full PATH keeps both scripts working reliably.
+> Trixie/cron runs with a reduced PATH. Using a full PATH ensures both scripts run reliably.
 
 ## Pi-hole v6 API notes
 
-- No `setupVars.conf` anymore
-- Configuration lives in `/etc/pihole/pihole.toml`
-- API is served from `/api`, not `/api.php`
-- Authentication uses HTTP Basic Auth (`cli` user + `/etc/pihole/cli_pw`)
-- Example tooling: `tools/pihole_api_healthcheck.sh`
-- `unbound` is not required
+- setupVars.conf is gone
+- Config now lives in /etc/pihole/pihole.toml
+- API is served at /api instead of /api.php
+- Authentication is HTTP Basic Auth using cli plus the password in /etc/pihole/cli_pw
+- The healthcheck script (pihole_api_healthcheck.sh) can hit those endpoints locally when PIHOLE_API_URL is set
+- Unbound is not required
 
 ## Troubleshooting
 
