@@ -139,7 +139,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 MIT. See [LICENSE](LICENSE).
 
-*Last updated: 2025-10-10 • Version: 5.3.2*
+*Last updated: 2025-10-25 • Version: 5.3.2*
 
 ## Support
 If this project helps you, you can support it here:
