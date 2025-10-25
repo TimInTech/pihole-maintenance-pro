@@ -23,6 +23,9 @@ Pi-hole v6 Wartung für Raspberry Pi OS (Bookworm/Trixie) mit Logging und Health
 - Pi-hole Update (`-up`), Gravity (`-g`), `reloaddns`  
 - Healthchecks: Port 53, `dig`, GitHub-Erreichbarkeit  
 - Optional: Tailscale-Info, FTL-Toplisten via `sqlite3`  
+- Performance-Dashboard & intelligente Zusammenfassung  
+- Lokales Backup vor Pi-hole-Änderungen  
+- Installer setzt automatisch einen wöchentlichen Cron (`0 4 * * 0`)  
 - Logs: `/var/log/pihole_maintenance_pro_<timestamp>.log`
 
 ## Schnellstart
@@ -76,6 +79,29 @@ sudo /usr/local/bin/pihole_maintenance_pro.sh
 ```bash
 sudo /usr/local/bin/pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
 ```
+
+## Beispielausgabe (echtes Pi-hole v6)
+Aufgenommen auf einem Raspberry Pi mit Pi-hole Core 6.1.4, Web 6.2.1, FTL 6.2.3 – so sieht das aktuelle Dashboard + die Zusammenfassung live aus:
+
+```bash
+╔═══════════════ PERFORMANCE DASHBOARD ═══════════════╗
+║ 🚀 Load: 1.81     💾 RAM: 23%    🌡  Temp: 50°C    🗄  Disk: 9% ║
+╚═══════════════════════════════════════════════════════╝
+
+════════ INTELLIGENTE ZUSAMMENFASSUNG ════════
+  #00  🌍 Network    IP: 192.168.178.21                 ✔ OK
+  #03  🛡  Pi-hole    v6.1.4                         ✔ OK
+  #07  🔍 Health     4 listeners                        ✔ OK
+  #08  🌐 DNS Ext    172.217.16.78                      ✔ OK
+  #09  🏠 DNS Local  127.0.0.1                          ✔ OK
+  #12  📊 FTL Query  24h: 141222 queries, 1% blocked    ✔ OK
+  #13  👥 FTL Client 25 active clients                  ✔ OK
+```
+
+Der reale Lauf bestätigt außerdem:
+- Backups werden vor Pi-hole-Wartung erstellt (z. B. `/etc/pihole/backup_20251025_100315`, `/etc/pihole/backup_20251025_100337`)
+- Der Installer setzt automatisch den empfohlenen Cron: `0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1`
+- Security-Block (Steps 20–26) und Healthchecks (Steps 07–10) laufen ohne Warnungen durch
 
 **Empfohlene Cronjobs:**
 
