@@ -82,3 +82,7 @@ copilot-instructions.md
 .codex*
 codex-debug.log
 pihole_maintenance_pro_test.sh
+.venv/
+vendor/bundle/
+.bundle/
+.npm-cache/
