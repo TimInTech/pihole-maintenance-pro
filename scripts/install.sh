@@ -32,7 +32,7 @@ else
 fi
 # Wöchentlicher Cron, idempotent
 (
-  crontab -l 2>/dev/null | grep -v 'pihole_maintenance_pro.sh'
+  crontab -l 2> /dev/null | grep -v 'pihole_maintenance_pro.sh'
   echo "0 4 * * 0 /usr/local/bin/pihole_maintenance_pro.sh >>/var/log/pihole_maint_cron.log 2>&1"
 ) | crontab -
 echo "Cron installed: Sundays 04:00"
