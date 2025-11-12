@@ -86,3 +86,18 @@ pihole_maintenance_pro_test.sh
 vendor/bundle/
 .bundle/
 .npm-cache/
+
+# Additional ignores
+.DS_Store
+Thumbs.db
+node_modules/
+dist/
+build/
+out/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.log
+*.tmp

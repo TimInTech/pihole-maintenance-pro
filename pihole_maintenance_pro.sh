@@ -54,9 +54,11 @@ fi
 DO_APT=1
 DO_UPGRADE=1
 DO_GRAVITY=1
-DO_DNSRELOAD=1
+# shellcheck disable=SC2034  # legacy flag (kept for help text compatibility)
+DO_DNSRELOAD=1  # no-op on v6, retained for help text compatibility
 JSON_OUTPUT=0
 DO_BACKUP=0
+RESTART_FTL=0
 while (("$#")); do
   case "$1" in
     --no-apt)
@@ -75,6 +77,10 @@ while (("$#")); do
       DO_DNSRELOAD=0
       shift
       ;;
+    --restart-ftl)
+      RESTART_FTL=1
+      shift
+      ;;
     --backup)
       DO_BACKUP=1
       shift
@@ -90,6 +96,7 @@ Usage: sudo ./pihole_maintenance_pro.sh [options]
   --no-upgrade     Skip "pihole -up"
   --no-gravity     Skip "pihole -g"
   --no-dnsreload   Skip "pihole reloaddns"
+  --restart-ftl    Restart pihole-FTL at the end (v6: only if needed)
   --json           Output results in JSON format
 EOF
       exit 0
@@ -483,7 +490,8 @@ if ((DO_BACKUP == 1)); then
   mkdir -p "$BACKUP_DIR"
   cp -a /etc/pihole/gravity.db "$BACKUP_DIR" 2> /dev/null || true
   cp -a /etc/pihole/pihole-FTL.db "$BACKUP_DIR" 2> /dev/null || true
-  cp -a /etc/pihole/custom.list "$BACKUP_DIR" 2> /dev/null || true
+  cp -a /etc/pihole/pihole.toml "$BACKUP_DIR" 2> /dev/null || true
+  cp -a /etc/pihole/hosts/*.list "$BACKUP_DIR" 2> /dev/null || true
   echo "Backup gespeichert: $BACKUP_DIR"
   find /var/backups/pihole/ -maxdepth 1 -type d -printf '%T@ %p\n' | sort -n | awk '{print $2}' | head -n -$MAX_BACKUPS | xargs -r rm -rf
 fi
@@ -492,7 +500,8 @@ backup_pihole() {
   backup_dir="/etc/pihole/backup_$(date +%Y%m%d_%H%M%S)"
   mkdir -p "$backup_dir"
   cp -a /etc/pihole/*.db "$backup_dir" 2> /dev/null || true
-  cp -a /etc/pihole/*.conf "$backup_dir" 2> /dev/null || true
+  cp -a /etc/pihole/pihole.toml "$backup_dir" 2> /dev/null || true
+  cp -a /etc/pihole/hosts/*.list "$backup_dir" 2> /dev/null || true
   echo "Backup erstellt: $backup_dir"
 }
 
@@ -513,11 +522,9 @@ else
   echo -e "${YELLOW}Gravity-Update übersprungen (--no-gravity).${NC}"
 fi
 
-# 06 – DNS reload
-if ((DO_DNSRELOAD == 1)); then
-  run_step 06 "🔁" "Reload DNS (reloaddns)" "\"$PIHOLE_BIN\" reloaddns"
-else
-  echo -e "${YELLOW}DNS-Reload übersprungen (--no-dnsreload).${NC}"
+# 06 – optionaler FTL-Restart (v6: nur bei Bedarf)
+if ((RESTART_FTL == 1)); then
+  run_step 06 "🔁" "Restart FTL (v6: nur bei Bedarf)" "systemctl restart pihole-FTL"
 fi
 
 # 07 – Health
