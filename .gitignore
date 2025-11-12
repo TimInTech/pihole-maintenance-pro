@@ -1,6 +1,5 @@
 # ------------------------------
 # General
-# ------------------------------
 *.log
 tmp/
 .temp/
@@ -11,20 +10,14 @@ tmp/
 *~
 .DS_Store
 Thumbs.db
-
-# ------------------------------
 # Copilot / Codex Artefakte
-# ------------------------------
 *Copilot*
 *copilot*
 *.codex
 .codex/
 .codex*
 codex-debug.log
-
-# ------------------------------
 # Build / Test / Temp
-# ------------------------------
 /tmp/
 /*.out
 *.pid
@@ -34,10 +27,7 @@ coverage/
 node_modules/
 dist/
 build/
-
-# ------------------------------
 # IDE / Editor
-# ------------------------------
 .vscode/
 .idea/
 *.iml
@@ -46,62 +36,35 @@ build/
 *.njsproj
 *.sln
 *.sw?
-
-# ------------------------------
 # OS / Misc
-# ------------------------------
 ehthumbs.db
 desktop.ini
-
-# ------------------------------
 # Repo Specific
-# ------------------------------
 /backup/
 /.backup/
 /.audit/
 /.github/java-upgrade/
-
 # Local test scripts, not for commit
 scripts/test-repo.sh
-
-# ------------------------------
 # Agents / Assistants (do not commit)
-# ------------------------------
 # Ephemeral agent instructions – keep out of repo
 AGENTS.md
 !AGENTS.md
-
 # Copilot artefacts
 copilot-instructions.md
-*Copilot*
-*copilot*
-
 # Codex artefacts
-*.codex
-.codex/
-.codex*
-codex-debug.log
 pihole_maintenance_pro_test.sh
 .venv/
 vendor/bundle/
 .bundle/
 .npm-cache/
-
 # Additional ignores
-.DS_Store
-Thumbs.db
-node_modules/
-dist/
-build/
 out/
 __pycache__/
 *.pyc
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-*.log
-*.tmp
-
 # Dotenv / local env files
 .env
 .env.*
