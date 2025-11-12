@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Pi-hole API Healthcheck (v6-ready)
+# Pi-hole API Healthcheck (v6-ready, session auth)
 # Collects local diagnostics and (optionally) queries the Pi-hole v6 JSON API.
 # Usage examples:
 #   bash tools/pihole_api_healthcheck.sh
 #   bash tools/pihole_api_healthcheck.sh --json
-#   PIHOLE_API_URL="http://localhost/api" bash tools/pihole_api_healthcheck.sh
-# Note: Works without root, but sqlite3 + cli_pw access may require sudo.
+#   PIHOLE_API_URL="http://localhost/api" PIHOLE_PASSWORD="..." bash tools/pihole_api_healthcheck.sh
+# Note: Works without root, but sqlite3 access may require sudo. For API calls
+#       use session auth: export PIHOLE_API_URL and PIHOLE_PASSWORD.
 # ============================================================================
 set -euo pipefail
 IFS=$'\n\t'
 
-CLI_PW_PATH="/etc/pihole/cli_pw"
 FTL_DB_PATH="/etc/pihole/pihole-FTL.db"
 
 JSON_OUTPUT=0
@@ -21,9 +21,9 @@ usage() {
 Usage: pihole_api_healthcheck.sh [--json]
 
 Collects local Pi-hole health metrics (CLI, FTL, DNS listeners, sqlite3 stats,
-temperature, load, memory, disk). When PIHOLE_API_URL is set and the Pi-hole
-CLI password is readable, performs authenticated Basic Auth requests (user
-"cli") against the Pi-hole v6 API endpoints /stats/summary and /stats/top_clients.
+temperature, load, memory, disk). When PIHOLE_API_URL is set, the script will
+attempt to authenticate using a session token (POST /api/auth) if
+PIHOLE_PASSWORD is provided, then query /stats/summary and /stats/top_clients.
 
 Options:
   --json     Emit machine-readable JSON instead of human-readable text
@@ -226,7 +226,7 @@ fi
 
 disk_used_pct=""
 if command -v df > /dev/null 2>&1; then
-  disk_used_pct="$(df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}')"
+  disk_used_pct="$(df -P / | awk 'NR==2 {gsub("%", "", $5); print $5}')"
 fi
 
 uptime_summary=""
@@ -235,15 +235,11 @@ if command -v uptime > /dev/null 2>&1; then
   uptime_summary="${uptime_summary//$'\n'/}"
 fi
 
-cli_password=""
-if [[ -r "$CLI_PW_PATH" ]]; then
-  cli_password="$(tr -d '\r\n' < "$CLI_PW_PATH")"
-fi
+# Note: v6 recommends session-based auth; cli_pw is deprecated for API usage.
 
 api_url="${PIHOLE_API_URL:-}"
 [[ -n "$api_url" ]] && api_url="${api_url%/}"
 api_status="API not queried (PIHOLE_API_URL unset)"
-api_used_basic_auth="false"
 api_context=0
 api_summary_body=""
 api_summary_http=""
@@ -255,7 +251,24 @@ declare -a TOP_CLIENTS_API=()
 api_total_override=""
 api_blocked_override=""
 api_percent_override=""
-auth_token=""
+SID=""
+
+# Perform session login (v6): POST /api/auth {"password":"..."} -> {"sid":"..."}
+api_login() {
+  local password="${PIHOLE_PASSWORD:-}"
+  [[ -z "$api_url" ]] && return 1
+  [[ -z "$password" ]] && return 2
+  local resp code
+  resp="$(curl -sS --connect-timeout 3 --max-time 7 -X POST "$api_url/api/auth" \
+    -H 'Content-Type: application/json' -d "{\"password\":\"${password}\"}" -w ' HTTP/%{http_code}')" || return 3
+  code="${resp##*HTTP/}"
+  resp="${resp% HTTP/*}"
+  if [[ "$code" == "200" ]]; then
+    SID="$(printf '%s' "$resp" | grep -oE '"sid"\s*:\s*"[^"]+"' | sed -E 's/.*"sid"\s*:\s*"([^"]+)".*/\1/')"
+    [[ -n "$SID" ]] && return 0
+  fi
+  return 4
+}
 
 call_api_endpoint() {
   local endpoint="$1" body_ref="$2" code_ref="$3" note_ref="$4"
@@ -265,9 +278,10 @@ call_api_endpoint() {
   tmp_err="$(mktemp -t pihole_api_err_XXXX)"
   TMP_FILES+=("$tmp_body" "$tmp_code" "$tmp_err")
 
-  if ! curl -sS -m 7 \
-    -H "Authorization: Basic $auth_token" \
-    -H "Accept: application/json" \
+  local extra_headers=()
+  [[ -n "$SID" ]] && extra_headers+=(-H "X-FTL-SID: $SID")
+  if ! curl -sS --connect-timeout 3 --max-time 7 \
+    "${extra_headers[@]}" -H "Accept: application/json" \
     -o "$tmp_body" \
     -w '%{http_code}' \
     "$api_url/$endpoint" > "$tmp_code" 2> "$tmp_err"; then
@@ -287,23 +301,17 @@ call_api_endpoint() {
 }
 
 if [[ -n "$api_url" ]]; then
-  if [[ -z "$cli_password" ]]; then
-    api_status="PIHOLE_API_URL set but $CLI_PW_PATH not readable"
-  elif ! command -v curl > /dev/null 2>&1; then
+  if ! command -v curl > /dev/null 2>&1; then
     api_status="curl not installed; skipping API calls"
-  elif ! command -v base64 > /dev/null 2>&1; then
-    api_status="base64 not installed; skipping API calls"
   else
-    auth_token="$(printf 'cli:%s' "$cli_password" | base64 | tr -d $'\n')"
-    api_used_basic_auth="true"
     api_context=1
+    if api_login; then
+      api_status="API queried with Session Auth"
+    else
+      api_status="API unauthenticated (no PIHOLE_PASSWORD or login failed)"
+    fi
     call_api_endpoint "stats/summary" api_summary_body api_summary_http api_summary_note
     call_api_endpoint "stats/top_clients" api_top_clients_body api_top_clients_http api_top_clients_note
-    if [[ "$api_summary_http" == "200" || "$api_top_clients_http" == "200" ]]; then
-      api_status="API queried with Basic Auth"
-    else
-      api_status="API query attempted with Basic Auth (check endpoint details)"
-    fi
   fi
 fi
 
@@ -613,7 +621,7 @@ print_json() {
     printf '"api":{'
     printf '"url":"%s",' "$(json_escape "$api_url")"
     printf '"status":"%s",' "$(json_escape "$api_status")"
-    printf '"used_basic_auth":%s,' "$([[ "$api_used_basic_auth" == "true" ]] && echo "true" || echo "false")"
+    printf '"auth":"%s",' "$([[ -n "$SID" ]] && echo "session" || echo "none")"
     printf '"summary_http_code":%s,' "$(json_http_code_or_null "$api_summary_http")"
     printf '"summary_error":%s,' "$(json_string_or_null "$api_summary_note")"
     printf '"top_clients_http_code":%s,' "$(json_http_code_or_null "$api_top_clients_http")"

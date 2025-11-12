@@ -5,18 +5,28 @@
 # ============================================================================
 set -euo pipefail
 IFS=$'\n\t'
+if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  echo "This uninstaller requires root. Re-run with sudo." >&2
+  exit 1
+fi
+PURGE=0
+[[ "${1:-}" == "--purge" ]] && PURGE=1
 
 echo "🗑️  Removing Pi-hole Maintenance PRO MAX..."
 
-# 1. Remove main script in /usr/local/bin
+# 1. Remove main script and healthcheck in /usr/local/bin
 if [[ -f /usr/local/bin/pihole_maintenance_pro.sh ]]; then
-  sudo rm -f /usr/local/bin/pihole_maintenance_pro.sh
+  rm -f /usr/local/bin/pihole_maintenance_pro.sh
   echo "✔ Removed: /usr/local/bin/pihole_maintenance_pro.sh"
+fi
+if [[ -f /usr/local/bin/pihole_api_healthcheck.sh ]]; then
+  rm -f /usr/local/bin/pihole_api_healthcheck.sh
+  echo "✔ Removed: /usr/local/bin/pihole_api_healthcheck.sh"
 fi
 
 # 2. Remove logs and temporary files
-sudo rm -f /var/log/pihole_maintenance_pro_*.log 2> /dev/null || true
-sudo rm -rf /tmp/pihole_maint_* 2> /dev/null || true
+rm -f /var/log/pihole_maintenance_pro_*.log 2> /dev/null || true
+rm -rf /tmp/pihole_maint_* 2> /dev/null || true
 echo "✔ Logs removed"
 
 # 3. Clean up cronjob
@@ -27,10 +37,12 @@ else
   echo "ℹ No cronjob found"
 fi
 
-# 4. Remove backups (optional)
-if [[ -d /var/backups/pihole ]]; then
-  sudo rm -rf /var/backups/pihole/
-  echo "✔ Removed backups: /var/backups/pihole/"
+# 4. Remove backups (only when --purge)
+if ((PURGE)) && [[ -d /var/backups/pihole ]]; then
+  rm -rf /var/backups/pihole/
+  echo "✔ Removed backups: /var/backups/pihole/ (purge)"
+else
+  echo "ℹ Backups preserved (use --purge to remove)"
 fi
 
-echo "✅ Uninstallation complete. System is clean."
+echo "✅ Uninstallation complete."
