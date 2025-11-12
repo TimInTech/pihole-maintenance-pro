@@ -101,3 +101,8 @@ __pycache__/
 .ruff_cache/
 *.log
 *.tmp
+
+# Dotenv / local env files
+.env
+.env.*
+!.env.example

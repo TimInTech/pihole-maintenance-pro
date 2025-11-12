@@ -14,10 +14,14 @@ PURGE=0
 
 echo "🗑️  Removing Pi-hole Maintenance PRO MAX..."
 
-# 1. Remove main script in /usr/local/bin
+# 1. Remove main script and healthcheck in /usr/local/bin
 if [[ -f /usr/local/bin/pihole_maintenance_pro.sh ]]; then
   rm -f /usr/local/bin/pihole_maintenance_pro.sh
   echo "✔ Removed: /usr/local/bin/pihole_maintenance_pro.sh"
+fi
+if [[ -f /usr/local/bin/pihole_api_healthcheck.sh ]]; then
+  rm -f /usr/local/bin/pihole_api_healthcheck.sh
+  echo "✔ Removed: /usr/local/bin/pihole_api_healthcheck.sh"
 fi
 
 # 2. Remove logs and temporary files
