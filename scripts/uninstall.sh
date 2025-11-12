@@ -34,7 +34,7 @@ else
 fi
 
 # 4. Remove backups (only when --purge)
-if (( PURGE )) && [[ -d /var/backups/pihole ]]; then
+if ((PURGE)) && [[ -d /var/backups/pihole ]]; then
   rm -rf /var/backups/pihole/
   echo "✔ Removed backups: /var/backups/pihole/ (purge)"
 else

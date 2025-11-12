@@ -226,7 +226,7 @@ fi
 
 disk_used_pct=""
 if command -v df > /dev/null 2>&1; then
-  disk_used_pct="$(df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}')"
+  disk_used_pct="$(df -P / | awk 'NR==2 {gsub("%", "", $5); print $5}')"
 fi
 
 uptime_summary=""

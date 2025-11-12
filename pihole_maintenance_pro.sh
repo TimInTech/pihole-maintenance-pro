@@ -45,9 +45,14 @@ WARN="${YELLOW}⚠${NC}"
 FAIL="${RED}✖${NC}"
 
 # --------------------------- Root check ------------------------------------
+# Für sicheren lokalen Selftest (RUN_SELFTEST=1) ohne Root erlauben
 if [[ ${EUID} -ne 0 ]]; then
-  echo -e "${RED}[ERROR]${NC} Bitte mit sudo oder als root ausführen." >&2
-  exit 1
+  if [[ "${RUN_SELFTEST:-0}" == "1" ]]; then
+    echo -e "${YELLOW}Hinweis:${NC} RUN_SELFTEST=1 erkannt – Root-Check übersprungen (APT/Upgrade/Gravity sollten via --no-* Flags deaktiviert sein)."
+  else
+    echo -e "${RED}[ERROR]${NC} Bitte mit sudo oder als root ausführen." >&2
+    exit 1
+  fi
 fi
 
 # --------------------------- Args ------------------------------------------
@@ -55,7 +60,7 @@ DO_APT=1
 DO_UPGRADE=1
 DO_GRAVITY=1
 # shellcheck disable=SC2034  # legacy flag (kept for help text compatibility)
-DO_DNSRELOAD=1  # no-op on v6, retained for help text compatibility
+DO_DNSRELOAD=1 # no-op on v6, retained for help text compatibility
 JSON_OUTPUT=0
 DO_BACKUP=0
 RESTART_FTL=0
@@ -74,6 +79,7 @@ while (("$#")); do
       shift
       ;;
     --no-dnsreload)
+      # shellcheck disable=SC2034  # legacy flag retained for help text compatibility
       DO_DNSRELOAD=0
       shift
       ;;
