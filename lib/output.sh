@@ -20,7 +20,7 @@ summary() {
     case "$k" in
       00) step_info="🌍 Network    ${STEP_DATA[00_ip]:+IP: ${STEP_DATA[00_ip]}}" ;;
       03)
-        ver="${STEP_DATA[03_version]}"
+        local ver="${STEP_DATA[03_version]}"
         ver="${ver#v}"
         step_info="🛡️  Pi-hole    ${ver:+v$ver}"
         ;;
