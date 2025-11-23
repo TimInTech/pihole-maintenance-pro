@@ -1,10 +1,10 @@
-.PHONY: check fmt lint
+.PHONY: check fmt lint test
 
 SHELL := /bin/bash
 SHFMT ?= shfmt
 SHELLCHECK ?= shellcheck
 
-SCRIPTS := pihole_maintenance_pro.sh scripts/*.sh tools/*.sh
+SCRIPTS := pihole_maintenance_pro.sh scripts/*.sh tools/*.sh lib/*.sh
 
 check:
 	@echo "bash -n"
@@ -35,3 +35,7 @@ lint:
 	else \
 		echo "shellcheck not installed; skipping"; \
 	fi
+
+test:
+	@echo "Running unit tests..."
+	@bash tests/run_tests.sh

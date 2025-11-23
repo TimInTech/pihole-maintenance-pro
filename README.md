@@ -145,11 +145,52 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 * Pi 3B note about `linux-image-rpi-v8`: ignorable on ARMv7.
 
+## Development
+
+### Project Structure
+
+```
+├── pihole_maintenance_pro.sh  # Main script (325 lines, down from 575)
+├── lib/                        # Modular library functions
+│   ├── utils.sh               # Utilities (colors, ANSI, data extraction)
+│   ├── system.sh              # System monitoring & health checks
+│   ├── pihole.sh              # Pi-hole specific functions
+│   ├── output.sh              # Output formatters (summary, JSON)
+│   └── steps.sh               # Step execution framework
+├── tests/                      # Unit tests
+│   ├── test_utils.sh          # Tests for utils.sh
+│   ├── test_system.sh         # Tests for system.sh
+│   ├── test_pihole.sh         # Tests for pihole.sh
+│   └── run_tests.sh           # Test runner
+├── scripts/                    # Installer & utilities
+└── tools/                      # Helper scripts
+```
+
+### Testing
+
+Run unit tests:
+```bash
+make test
+```
+
+Run syntax check, linting, and formatting:
+```bash
+make check
+```
+
+### Build Commands
+
+- **Syntax check**: `bash -n pihole_maintenance_pro.sh`
+- **Lint**: `shellcheck -x pihole_maintenance_pro.sh scripts/*.sh tools/*.sh lib/*.sh`
+- **Format**: `shfmt -w -i 2 -ci .`
+- **Test**: `make test` or `bash tests/run_tests.sh`
+- **Self-test**: `RUN_SELFTEST=1 bash pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity`
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
-*Last updated: 2025-10-25 • Version: 5.3.2*
+*Last updated: 2025-11-23 • Version: 5.3.2*
 
 ## Support
 

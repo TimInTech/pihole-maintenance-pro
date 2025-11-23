@@ -26,6 +26,9 @@ jobs:
           git status --porcelain
           git diff --exit-code || { echo "❌ shfmt changed files. Please run 'make fmt' locally and commit."; exit 1; }
 
+      - name: Run unit tests
+        run: make test
+
       - name: Script self-test (no side effects)
         env:
           RUN_SELFTEST: "1"
