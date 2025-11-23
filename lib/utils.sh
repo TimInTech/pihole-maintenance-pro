@@ -57,6 +57,7 @@ echo_hdr() {
 extract_step_data() {
   local step_num="$1" output="$2"
   # shellcheck disable=SC2034,SC2154  # STEP_DATA used/assigned in main script
+  # shellcheck disable=SC2080  # Case patterns with leading zeros are string matches, not octal
   case "$step_num" in
     00) STEP_DATA[00_ip]=$(echo "$output" | grep -oE '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+' | head -1) ;;
     03) STEP_DATA[03_version]=$(echo "$output" | grep "Core version" | awk '{print $4}') ;;
