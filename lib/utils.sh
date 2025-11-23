@@ -62,9 +62,9 @@ extract_step_data() {
     00) STEP_DATA[00_ip]=$(echo "$output" | grep -oE '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+' | head -1) ;;
     03) STEP_DATA[03_version]=$(echo "$output" | grep "Core version" | awk '{print $4}') ;;
     07) STEP_DATA[07_listeners]=$(echo "$output" | wc -l) ;;
-    "08") STEP_DATA["08_response"]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
-    "09") STEP_DATA["09_response"]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
-    10) STEP_DATA["10_github"]=$(echo "$output" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
+    08) STEP_DATA[08_response]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
+    09) STEP_DATA[09_response]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
+    10) STEP_DATA[10_github]=$(echo "$output" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
   esac
 }
 
