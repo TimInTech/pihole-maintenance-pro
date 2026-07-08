@@ -72,9 +72,6 @@ MAGENTA="${UI_MAGENTA:-}"
 CYAN="${UI_CYAN:-}"
 BOLD="${UI_BOLD:-}"
 NC="${UI_RESET:-}"
-CHECK="${GREEN}✔${NC}"
-WARN="${YELLOW}⚠${NC}"
-FAIL="${RED}✖${NC}"
 
 # --------------------------- Root check ------------------------------------
 # Für sicheren lokalen Selftest (RUN_SELFTEST=1) ohne Root erlauben
@@ -182,7 +179,7 @@ else
   printf '%sHinweis:%s /var/log nicht beschreibbar, Log nach %s.\n' "$YELLOW" "$NC" "$TMPDIR"
 fi
 
-cleanup_tmpdir() { rm -rf "$TMPDIR" 2>/dev/null || true; }
+cleanup_tmpdir() { rm -rf "$TMPDIR" 2> /dev/null || true; }
 trap cleanup_tmpdir EXIT INT TERM
 exec > >(tee -a "$LOGFILE") 2>&1
 
@@ -504,7 +501,7 @@ if ((DO_APT == 1)); then
   export DEBIAN_FRONTEND=noninteractive
   run_step 01 "🔄" "APT: update & upgrade" "apt update && apt -y upgrade" true
   run_step 02 "🧹" "APT: autoremove & autoclean" "apt -y autoremove && apt -y autoclean"
-      if dpkg --print-architecture | grep -q '^armhf$'; then
+  if dpkg --print-architecture | grep -q '^armhf$'; then
     if apt list --upgradable 2> /dev/null | grep -q '^linux-image-rpi-v8'; then
       printf '%sHinweis:%s '\''linux-image-rpi-v8'\'' ist 64-bit (ARMv8). Auf Pi 3B (ARMv7) ignorierbar.\n' "$YELLOW" "$NC"
     fi
