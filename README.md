@@ -144,8 +144,10 @@ the root check (`RUN_SELFTEST=1`) and disables every mutating step (`--no-*`):
 RUN_SELFTEST=1 bash pihole_maintenance_pro.sh --no-apt --no-upgrade --no-gravity --no-dnsreload
 ```
 
-This is the same self-test the CI workflow uses. On a host without the `pihole` CLI the run exits
-cleanly instead of failing.
+This is the same self-test CI runs. It still requires the `pihole` CLI to get past the environment
+check: on a host **without** Pi-hole the script stops early with exit code `127` and makes no
+changes (CI sets `CI=1`, which turns that case into a clean exit `0`). For a pure syntax check on
+any machine, use `bash -n pihole_maintenance_pro.sh`.
 
 ## Typical usage
 
@@ -173,14 +175,16 @@ sudo /usr/local/bin/pihole_maintenance_pro.sh --json
 | `--no-dnsreload` | Deprecated on v6 (no-op; kept for compatibility) |
 | `--restart-ftl` | Restart `pihole-FTL` at the end (v6: only if needed) |
 | `--backup` | Extra rotated backup under `/var/backups/pihole/` before Pi-hole ops |
-| `--json` | Emit machine-readable JSON instead of the colored summary |
+| `--json` | Emit a machine-readable JSON block in place of the human-readable end-of-run summary |
 | `-h`, `--help` | Show usage |
 
 ## Output, logs & JSON
 
 Every run writes a timestamped log to `/var/log/pihole_maintenance_pro_<timestamp>.log`.
-Per-step live lines use a unified, timestamped format (`[HH:MM:SS] OK|WARN|ERR …`). Use `--json`
-for a machine-readable result you can pipe into monitoring.
+Per-step live lines use a unified, timestamped format (`[HH:MM:SS] OK|WARN|ERR …`). `--json`
+replaces the end-of-run summary with a machine-readable JSON block. Note that the progress/step
+lines are still printed to stdout **before** it, so capture or extract the trailing JSON rather
+than piping the whole run straight into `jq`.
 
 ### Sample run (real Pi-hole v6)
 
