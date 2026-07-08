@@ -103,6 +103,11 @@ Captured on a Raspberry Pi with Pi-hole Core 6.1.4, Web 6.2.1, FTL 6.2.3 — thi
   #13  👥 FTL Client 25 active clients                  ✔ OK
 ```
 
+> **Output note (v5.3.2 refresh):** per-step live lines now use a unified, timestamped
+> format (`[HH:MM:SS] OK|WARN|ERR …`) instead of `✔ Erfolg`/`⚠ Warnung`. The end-of-run
+> dashboard and summary shown above are unchanged. `SIGINT`/`SIGTERM` (Ctrl-C) now render the
+> summary and clean up the temp dir exactly once. All flags, JSON output and steps are identical.
+
 The same production run confirms:
 
 - Backups are created before Pi-hole maintenance kicks in (e.g. `/etc/pihole/backup_20251025_100315`, `/etc/pihole/backup_20251025_100337`)

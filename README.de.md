@@ -107,6 +107,12 @@ Aufgenommen auf einem Raspberry Pi mit Pi-hole Core 6.1.4, Web 6.2.1, FTL 6.2.3 
   #13  👥 FTL Client 25 active clients                  ✔ OK
 ```
 
+> **Hinweis zur Ausgabe (v5.3.2-Refresh):** Die Live-Zeilen pro Schritt nutzen jetzt ein
+> vereinheitlichtes, zeitgestempeltes Format (`[HH:MM:SS] OK|WARN|ERR …`) statt
+> `✔ Erfolg`/`⚠ Warnung`. Das oben gezeigte Dashboard und die Zusammenfassung bleiben
+> unverändert. `SIGINT`/`SIGTERM` (Strg-C) erzeugen die Zusammenfassung und räumen das
+> Temp-Verzeichnis nun genau einmal auf. Alle Flags, JSON-Ausgabe und Steps sind identisch.
+
 Der reale Lauf bestätigt außerdem:
 
 - Backups werden vor Pi-hole-Wartung erstellt (z. B. `/etc/pihole/backup_20251025_100315`, `/etc/pihole/backup_20251025_100337`)
