@@ -269,7 +269,21 @@ collect_system_info() {
 extract_step_data() {
   local step_num="$1" output="$2"
   case "$step_num" in
-    00) STEP_DATA[00_ip]=$(echo "$output" | grep -oE '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+' | head -1) ;;
+    # Fehlende RFC1918-IP (grep Exit 1) ist ein erlaubter Zustand und darf unter
+    # set -euo pipefail nicht abbrechen; echte grep-Fehler werden weitergereicht.
+    00)
+      local step_ip=""
+      if step_ip=$(grep -m1 -oE '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+' <<< "$output"); then
+        STEP_DATA[00_ip]="$step_ip"
+      else
+        local grep_rc=$?
+        if [[ "$grep_rc" -eq 1 ]]; then
+          STEP_DATA[00_ip]=""
+        else
+          return "$grep_rc"
+        fi
+      fi
+      ;;
     03) STEP_DATA[03_version]=$(echo "$output" | grep "Core version" | awk '{print $4}') ;;
     07) STEP_DATA[07_listeners]=$(echo "$output" | wc -l) ;;
     08) STEP_DATA[08_response]=$(echo "$output" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) ;;
