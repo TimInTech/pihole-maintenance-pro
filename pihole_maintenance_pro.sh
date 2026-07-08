@@ -477,6 +477,11 @@ on_exit() {
   fi
   cleanup_tmpdir
   [[ $rc -ne 0 ]] && printf '%sScript ended with exit code %s%s\n' "$RED" "$rc" "$NC"
+  # Exit-Status explizit erhalten: ohne dieses exit würde bei rc=0 die vorherige
+  # (falsche) [[ ]]-Bedingung als Rückgabewert der EXIT-Trap durchschlagen und
+  # erfolgreiche Läufe fälschlich als Fehler (Code 1) melden. Re-Entry-Guard
+  # oben verhindert dabei doppelte Summary/Cleanup.
+  exit "$rc"
 }
 # on_exit läuft genau einmal über EXIT; INT/TERM leiten sauber dorthin um und
 # sorgen so auch bei Ctrl-C für Summary + tmp-Cleanup.
